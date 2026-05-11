@@ -104,22 +104,52 @@ def load_key(cli_key: str | None) -> str:
     return ""
 
 
+def _prompt_yes_no(question: str, default: bool = True) -> bool:
+    """Ask a y/n question on stderr. Returns True for yes, False for no.
+    On EOF / Ctrl+C, returns the default so non-interactive runs don't hang."""
+    suffix = " [Y/n] " if default else " [y/N] "
+    while True:
+        try:
+            print(question + suffix, end="", flush=True, file=sys.stderr)
+            line = sys.stdin.readline()
+            if not line:  # EOF
+                print("", file=sys.stderr)
+                return default
+            ans = line.strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("", file=sys.stderr)
+            return default
+        if ans == "":
+            return default
+        if ans in ("y", "yes"):
+            return True
+        if ans in ("n", "no"):
+            return False
+        print(" (please answer y or n)", file=sys.stderr)
+
+
 def interactive_setup() -> int:
-    """First-run setup. Prompts the user for their API key, validates it
-    against /api/me, and saves it on success. Loops until they enter a valid
-    key or hit Ctrl+C."""
+    """First-run setup. Asks yes/no whether to configure an API key, then
+    prompts for it, validates it against /api/me, and saves it on success.
+    Returns 0 on success or if the user declined, 1 on cancel."""
     print("", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
-    print(" adsb-to-wdgwars — first-time setup", file=sys.stderr)
+    print(" adsb-to-wdgwars — API key setup", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
     print("", file=sys.stderr)
-    print(" Get your API key from your WDGoWars profile page:", file=sys.stderr)
-    print("   https://wdgwars.pl/  →  profile  →  API Key", file=sys.stderr)
+    print(" An API key is ONLY needed if you want to upload to WDGoWars.", file=sys.stderr)
+    print(" Local conversion to JSON works without one.", file=sys.stderr)
     print("", file=sys.stderr)
-    print(" It will be saved to:", file=sys.stderr)
-    print(f"   {_key_path()}", file=sys.stderr)
-    print(" (mode 0600 on Unix — only you can read it)", file=sys.stderr)
+    print(" Get your key from: https://wdgwars.pl/  →  profile  →  API Key", file=sys.stderr)
+    print(f" It will be saved to: {_key_path()}", file=sys.stderr)
     print("", file=sys.stderr)
+
+    if not _prompt_yes_no(" Set up your WDGoWars API key now?", default=True):
+        print("", file=sys.stderr)
+        print(" Skipped. You can run setup later with:", file=sys.stderr)
+        print("   python3 adsb_to_wdgwars.py --setup", file=sys.stderr)
+        print("", file=sys.stderr)
+        return 0
 
     while True:
         try:
@@ -733,14 +763,15 @@ def watch_dir(watch_dir: Path, args) -> int:
     if args.upload:
         api_key = load_key(args.key)
         if not api_key:
-            print("\n[adsb] no API key found — let's set one up before "
-                  "starting the watch.", file=sys.stderr)
+            print("\n[adsb] --upload was passed but no API key is configured.",
+                  file=sys.stderr)
             rc = interactive_setup()
             if rc != 0:
                 return rc
             api_key = load_key(args.key)
             if not api_key:
-                sys.exit("setup completed but key not loadable — strange")
+                sys.exit("--upload requires an API key. Run with --setup, or "
+                         "drop --upload to just convert files locally.")
 
     print(f"[watch] watching {watch_dir.resolve()} every {args.watch_interval}s "
           f"for {args.watch_glob!r} (Ctrl+C to stop)", file=sys.stderr)
@@ -917,15 +948,16 @@ def main() -> int:
     if args.upload:
         key = load_key(args.key)
         if not key:
-            # First-time upload without a saved key — offer to set it up now.
-            print("\n[adsb] no API key found — let's set one up.",
+            print("\n[adsb] --upload was passed but no API key is configured.",
                   file=sys.stderr)
             rc = interactive_setup()
             if rc != 0:
                 return rc
             key = load_key(args.key)
-            if not key:  # paranoia — should never happen if setup returned 0
-                sys.exit("setup completed but key not loadable — strange")
+            if not key:
+                print("[adsb] no key saved — skipping upload. Your local JSON "
+                      "file was still written.", file=sys.stderr)
+                return 0
         return upload(records, key, args.api_url,
                       batch_size=args.batch_size, dry_run=args.dry_run)
 

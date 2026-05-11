@@ -72,6 +72,8 @@ Want to pipe it somewhere else (a different script, jq, etc.) without writing a 
 
 ### Step 5: One-time setup (saves your API key)
 
+> **You only need this if you want to upload to WDGoWars.** If you just want a local JSON file, you're already done — skip to the end.
+
 Run the interactive setup:
 
 ```bash
@@ -82,16 +84,23 @@ You'll see:
 
 ```
 ────────────────────────────────────────────────────────────
- adsb-to-wdgwars — first-time setup
+ adsb-to-wdgwars — API key setup
 ────────────────────────────────────────────────────────────
 
- Get your API key from your WDGoWars profile page:
-   https://wdgwars.pl/  →  profile  →  API Key
+ An API key is ONLY needed if you want to upload to WDGoWars.
+ Local conversion to JSON works without one.
 
- It will be saved to:
-   /home/you/.config/adsb-to-wdgwars/api.key
- (mode 0600 on Unix — only you can read it)
+ Get your key from: https://wdgwars.pl/  →  profile  →  API Key
+ It will be saved to: /home/you/.config/adsb-to-wdgwars/api.key
 
+ Set up your WDGoWars API key now? [Y/n]
+```
+
+Answer **`y`** (or just hit Enter) to continue. Answer **`n`** to skip — the tool will still convert files locally, it just won't upload.
+
+If you said yes, you'll be prompted next:
+
+```
  Paste your WDGoWars API key (hidden):
 ```
 
