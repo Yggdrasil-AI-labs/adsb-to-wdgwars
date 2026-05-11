@@ -182,78 +182,57 @@ def parse_sbs1(path: Path) -> dict[str, dict]:
 def parse_avr(path: Path) -> dict[str, dict]:
     try:
         import pyModeS as pms
-        from pyModeS.extra.tcpclient import TcpClient  # noqa: F401 — only to confirm install
     except ImportError:
         sys.exit("AVR raw input requires pyModeS — install with: pip install pyModeS")
 
-    # CPR position decoding needs paired even/odd frames per aircraft. We
-    # accumulate frames per ICAO and decode positions globally (using the
-    # local ref point if provided via --ref).
-    even: dict[str, tuple[float, str]] = {}  # icao -> (ts, msg)
-    odd:  dict[str, tuple[float, str]] = {}
+    # pyModeS 3.x ships a PipeDecoder that maintains per-ICAO state across
+    # frames — handles paired CPR position decoding, callsign merging, and
+    # altitude/velocity tracking automatically. Way cleaner than rolling our
+    # own even/odd CPR pairing.
+    pd = pms.PipeDecoder()
     rows: dict[str, dict] = {}
+    now = time.time()
+    line_idx = 0
 
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for raw in f:
             line = raw.strip()
-            # Strip optional timestamp prefix; keep the *...; part
             if "*" in line:
                 line = line[line.index("*"):]
             if not line.startswith("*") or not line.endswith(";"):
                 continue
-            msg = line[1:-1]
-            if len(msg) not in (14, 28):  # short or long Mode-S
+            hexmsg = line[1:-1]
+            if len(hexmsg) not in (14, 28):
                 continue
+            line_idx += 1
             try:
-                df = pms.df(msg)
+                # Synthetic timestamps spaced by 10ms keep CPR-pairing happy
+                # when the source file lacks per-line wallclock data.
+                d = pd.decode(hexmsg, timestamp=now + line_idx * 0.01)
             except Exception:
                 continue
-            if df != 17 and df != 18:
-                continue  # only ADS-B extended squitter carries positions
-            try:
-                icao = pms.icao(msg).upper()
-                tc = pms.adsb.typecode(msg)
-            except Exception:
+            if not d:
                 continue
-            now = time.time()
+            icao = (d.get("icao") or "").upper()
+            if not icao:
+                continue
             entry = rows.setdefault(icao, {"icao": icao, "callsign": "",
                                            "lat": None, "lon": None,
                                            "alt_ft": 0, "speed_kt": 0,
                                            "heading": 0,
                                            "first_seen": _now_iso()})
-            try:
-                if 1 <= tc <= 4:
-                    entry["callsign"] = pms.adsb.callsign(msg).strip().rstrip("_")
-                elif 9 <= tc <= 18:  # airborne position
-                    oe = pms.adsb.oe_flag(msg)
-                    if oe == 0:
-                        even[icao] = (now, msg)
-                    else:
-                        odd[icao] = (now, msg)
-                    if icao in even and icao in odd:
-                        t0, m0 = even[icao]
-                        t1, m1 = odd[icao]
-                        try:
-                            lat, lon = pms.adsb.airborne_position(m0, m1, t0, t1)
-                            entry["lat"] = lat
-                            entry["lon"] = lon
-                        except Exception:
-                            pass
-                    try:
-                        entry["alt_ft"] = pms.adsb.altitude(msg) or entry["alt_ft"]
-                    except Exception:
-                        pass
-                elif tc == 19:  # airborne velocity
-                    try:
-                        v = pms.adsb.velocity(msg)
-                        if v:
-                            spd, hdg, _vr, _typ = v
-                            if spd: entry["speed_kt"] = int(spd)
-                            if hdg is not None: entry["heading"] = int(hdg)
-                    except Exception:
-                        pass
-            except Exception:
-                continue
+            # PipeDecoder fills in fields incrementally as frames arrive
+            if d.get("callsign"):
+                entry["callsign"] = d["callsign"].strip().rstrip("_")
+            if d.get("latitude") is not None and d.get("longitude") is not None:
+                entry["lat"] = d["latitude"]
+                entry["lon"] = d["longitude"]
+            if d.get("altitude"):
+                entry["alt_ft"] = int(d["altitude"])
+            if d.get("groundspeed"):
+                entry["speed_kt"] = int(d["groundspeed"])
+            if d.get("track") is not None:
+                entry["heading"] = int(d["track"])
 
     out: dict[str, dict] = {}
     for icao, e in rows.items():
