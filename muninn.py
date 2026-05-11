@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""adsb_to_wdgwars.py — convert ADS-B capture files to the WDGoWars aircraft
+"""muninn.py — convert ADS-B capture files to the WDGoWars aircraft
 upload JSON, and optionally POST directly to the server.
 
 Auto-detects the input format from the first non-empty line:
@@ -33,13 +33,13 @@ is required** — without it the server rejects every payload as a replay).
 Examples
 --------
   # Just convert to JSON
-  python3 adsb_to_wdgwars.py mycapture.txt --out vessels.json
+  python3 muninn.py mycapture.txt --out vessels.json
 
   # Convert and upload (API key from env or --key)
-  WDGWARS_API_KEY=YOURKEY python3 adsb_to_wdgwars.py mycapture.txt --upload
+  WDGWARS_API_KEY=YOURKEY python3 muninn.py mycapture.txt --upload
 
   # Show what would be sent without sending
-  python3 adsb_to_wdgwars.py mycapture.txt --upload --dry-run
+  python3 muninn.py mycapture.txt --upload --dry-run
 
 License: MIT
 """
@@ -75,9 +75,9 @@ ME_API_URL = "https://wdgwars.pl/api/me"
 def _config_dir() -> Path:
     if os.name == "nt":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / "adsb-to-wdgwars"
+        return Path(base) / "muninn"
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "adsb-to-wdgwars"
+    return Path(base) / "muninn"
 
 
 def _key_path() -> Path:
@@ -88,7 +88,7 @@ def load_key(cli_key: str | None) -> str:
     """Resolve API key in priority order:
     1. --key CLI flag
     2. $WDGWARS_API_KEY env var
-    3. ~/.config/adsb-to-wdgwars/api.key (saved via --save-key)
+    3. ~/.config/muninn/api.key (saved via --save-key)
     """
     if cli_key:
         return cli_key.strip()
@@ -134,7 +134,7 @@ def interactive_setup() -> int:
     Returns 0 on success or if the user declined, 1 on cancel."""
     print("", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
-    print(" adsb-to-wdgwars — API key setup", file=sys.stderr)
+    print(" muninn — API key setup", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
     print("", file=sys.stderr)
     print(" An API key is ONLY needed if you want to upload to WDGoWars.", file=sys.stderr)
@@ -147,7 +147,7 @@ def interactive_setup() -> int:
     if not _prompt_yes_no(" Set up your WDGoWars API key now?", default=True):
         print("", file=sys.stderr)
         print(" Skipped. You can run setup later with:", file=sys.stderr)
-        print("   python3 adsb_to_wdgwars.py --setup", file=sys.stderr)
+        print("   python3 muninn.py --setup", file=sys.stderr)
         print("", file=sys.stderr)
         return 0
 
@@ -164,7 +164,7 @@ def interactive_setup() -> int:
                       file=sys.stderr)
                 key = sys.stdin.readline().strip()
         except (KeyboardInterrupt, EOFError):
-            print("\n[adsb] setup cancelled — no key saved", file=sys.stderr)
+            print("\n[muninn] setup cancelled — no key saved", file=sys.stderr)
             return 1
 
         if not key:
@@ -183,7 +183,7 @@ def interactive_setup() -> int:
         print("", file=sys.stderr)
         print(" ✓ Setup complete. You can now run uploads without --key:",
               file=sys.stderr)
-        print("   python3 adsb_to_wdgwars.py yourfile.txt --upload",
+        print("   python3 muninn.py yourfile.txt --upload",
               file=sys.stderr)
         print("", file=sys.stderr)
         return 0
@@ -211,9 +211,9 @@ def save_key(key: str) -> None:
         os.chmod(p, 0o600)
     except Exception:
         pass
-    print(f"[adsb] saved API key to {p}", file=sys.stderr)
-    print(f"[adsb] (file mode 600 — only your user can read it)", file=sys.stderr)
-    print(f"[adsb] you can now run uploads without --key or env var",
+    print(f"[muninn] saved API key to {p}", file=sys.stderr)
+    print(f"[muninn] (file mode 600 — only your user can read it)", file=sys.stderr)
+    print(f"[muninn] you can now run uploads without --key or env var",
           file=sys.stderr)
 
 
@@ -231,7 +231,7 @@ def check_whoami(key: str) -> int:
     req = urllib.request.Request(
         ME_API_URL,
         headers={"X-API-Key": key,
-                 "User-Agent": "adsb-to-wdgwars/1.0"},
+                 "User-Agent": "muninn/1.0"},
     )
     try:
         with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp:
@@ -240,21 +240,21 @@ def check_whoami(key: str) -> int:
                 # Only show the error field, not the whole response dict
                 # (response shape is server-controlled — defensive)
                 err = data.get("error", "unknown")
-                print(f"[adsb] key rejected: {_scrub(err, key)}",
+                print(f"[muninn] key rejected: {_scrub(err, key)}",
                       file=sys.stderr)
                 return 1
-            print(f"[adsb] key OK — user={data.get('username')}",
+            print(f"[muninn] key OK — user={data.get('username')}",
                   file=sys.stderr)
-            print(f"[adsb]   wifi={data.get('wifi', 0)} "
+            print(f"[muninn]   wifi={data.get('wifi', 0)} "
                   f"ble={data.get('ble', 0)} aircraft={data.get('aircraft', 0)} "
                   f"total={data.get('total', 0)}", file=sys.stderr)
             return 0
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:200]
-        print(f"[adsb] HTTP {e.code}: {_scrub(body, key)}", file=sys.stderr)
+        print(f"[muninn] HTTP {e.code}: {_scrub(body, key)}", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"[adsb] whoami failed: {_scrub(str(e), key)}", file=sys.stderr)
+        print(f"[muninn] whoami failed: {_scrub(str(e), key)}", file=sys.stderr)
         return 1
 
 
@@ -686,7 +686,7 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
             headers={
                 "Content-Type": "application/json",
                 "X-API-Key": api_key,
-                "User-Agent": "adsb-to-wdgwars/1.0",
+                "User-Agent": "muninn/1.0",
                 "Accept": "application/json",
             },
         )
@@ -763,7 +763,7 @@ def watch_dir(watch_dir: Path, args) -> int:
     if args.upload:
         api_key = load_key(args.key)
         if not api_key:
-            print("\n[adsb] --upload was passed but no API key is configured.",
+            print("\n[muninn] --upload was passed but no API key is configured.",
                   file=sys.stderr)
             rc = interactive_setup()
             if rc != 0:
@@ -886,7 +886,7 @@ def main() -> int:
     if args.whoami:
         key = load_key(args.key)
         if not key:
-            sys.exit("no API key found — run `python3 adsb_to_wdgwars.py --setup` "
+            sys.exit("no API key found — run `python3 muninn.py --setup` "
                      "for first-time setup")
         return check_whoami(key)
 
@@ -901,7 +901,7 @@ def main() -> int:
         return watch_dir(path, args)
 
     fmt = args.format if args.format != "auto" else detect_format(path)
-    print(f"[adsb] detected format: {fmt}", file=sys.stderr)
+    print(f"[muninn] detected format: {fmt}", file=sys.stderr)
 
     if fmt == "avr" or fmt == "avr-tagged":
         rows = parse_avr(path)
@@ -919,7 +919,7 @@ def main() -> int:
         sys.exit(f"unknown format: {fmt}")
 
     records = list(rows.values())
-    print(f"[adsb] decoded {len(records)} unique aircraft with positions",
+    print(f"[muninn] decoded {len(records)} unique aircraft with positions",
           file=sys.stderr)
 
     # Decide where output goes:
@@ -942,20 +942,20 @@ def main() -> int:
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(records, indent=2))
-        print(f"\n[adsb] OK -- wrote {len(records)} aircraft to:\n"
+        print(f"\n[muninn] OK -- wrote {len(records)} aircraft to:\n"
               f"       {out_path}\n", file=sys.stderr)
 
     if args.upload:
         key = load_key(args.key)
         if not key:
-            print("\n[adsb] --upload was passed but no API key is configured.",
+            print("\n[muninn] --upload was passed but no API key is configured.",
                   file=sys.stderr)
             rc = interactive_setup()
             if rc != 0:
                 return rc
             key = load_key(args.key)
             if not key:
-                print("[adsb] no key saved — skipping upload. Your local JSON "
+                print("[muninn] no key saved — skipping upload. Your local JSON "
                       "file was still written.", file=sys.stderr)
                 return 0
         return upload(records, key, args.api_url,

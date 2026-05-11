@@ -16,9 +16,9 @@
 
 ## API key handling
 
-- Resolution priority: `--key` flag → `$WDGWARS_API_KEY` → `~/.config/adsb-to-wdgwars/api.key` (or `%APPDATA%\adsb-to-wdgwars\api.key` on Windows).
+- Resolution priority: `--key` flag → `$WDGWARS_API_KEY` → `~/.config/muninn/api.key` (or `%APPDATA%\muninn\api.key` on Windows).
 - The saved key file is written with **mode `0600`** on Unix (only the owner can read it). The file descriptor is opened with `O_CREAT | O_TRUNC` and the permission bits **before** any bytes are written, so the secret is never world-readable, even briefly.
-- `--save-key` **refuses to write through a symlink** — protects against an attacker who managed to plant `~/.config/adsb-to-wdgwars/api.key -> /home/you/.ssh/id_rsa` from clobbering your SSH key when you run `--save-key`.
+- `--save-key` **refuses to write through a symlink** — protects against an attacker who managed to plant `~/.config/muninn/api.key -> /home/you/.ssh/id_rsa` from clobbering your SSH key when you run `--save-key`.
 - The tool **never prints the API key** in any output (success or failure). All error messages route through a `_scrub()` helper that replaces the key with `xxxx…xxxx` (first 4 + last 4 chars) if it ever appears in a server response or exception trace.
 - The key is sent over HTTPS (`X-API-Key` header) to `wdgwars.pl` only. The TLS context is explicit (`ssl.create_default_context()`) — system trust store, hostname verification on, TLS 1.2+, secure ciphers.
 
@@ -57,7 +57,7 @@ If you suspect your key has leaked, rotate it on the WDGoWars site and run `--sa
 ## Reporting issues
 
 Found a security problem? Open a private security advisory on GitHub:
-1. Go to the [Security tab](https://github.com/HiroAlleyCat/adsb-to-wdgwars/security/advisories) of this repo
+1. Go to the [Security tab](https://github.com/HiroAlleyCat/muninn/security/advisories) of this repo
 2. Click "Report a vulnerability"
 3. Describe the issue + a proof of concept if possible
 
@@ -79,7 +79,7 @@ Please do **not** post security issues to the public issue tracker. Aim is to gi
 
 ## Things this tool does NOT defend against (out of scope)
 
-- Malware on the user's machine that can read `~/.config/adsb-to-wdgwars/api.key` (any malware running as your user can read this file — that's the OS's security boundary, not the tool's).
+- Malware on the user's machine that can read `~/.config/muninn/api.key` (any malware running as your user can read this file — that's the OS's security boundary, not the tool's).
 - WDGoWars server compromise (the tool can only be as secure as the server it talks to).
 - Network DNS poisoning (TLS cert verification mitigates active MITM but a compromised CA could still be a problem).
 - Decoding accuracy / correctness — the tool does its best with `pyModeS`'s CPR decoder, but doesn't validate that the receiver itself wasn't fed bogus data.

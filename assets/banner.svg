@@ -1,0 +1,108 @@
+<svg viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="sky2" cx="30%" cy="40%" r="85%">
+      <stop offset="0%" stop-color="#1f2a4e"/>
+      <stop offset="55%" stop-color="#0a0e1c"/>
+      <stop offset="100%" stop-color="#02030a"/>
+    </radialGradient>
+    <linearGradient id="raven2" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#0c0c12"/>
+      <stop offset="100%" stop-color="#1c1d26"/>
+    </linearGradient>
+    <radialGradient id="eyeglow2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffcf7a"/>
+      <stop offset="55%" stop-color="#c46a1a"/>
+      <stop offset="100%" stop-color="#3a1604" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="title" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0e6cc"/>
+      <stop offset="100%" stop-color="#b08850"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#sky2)"/>
+
+  <!-- starfield -->
+  <g fill="#9badd0">
+    <circle cx="80"   cy="80"  r="1.4" opacity="0.7"/>
+    <circle cx="1180" cy="120" r="1.6" opacity="0.8"/>
+    <circle cx="220"  cy="540" r="1.1" opacity="0.55"/>
+    <circle cx="1100" cy="500" r="1.2" opacity="0.65"/>
+    <circle cx="900"  cy="60"  r="0.9" opacity="0.5"/>
+    <circle cx="60"   cy="380" r="1.0" opacity="0.55"/>
+    <circle cx="600"  cy="40"  r="0.8" opacity="0.5"/>
+    <circle cx="780"  cy="580" r="1.0" opacity="0.6"/>
+    <circle cx="430"  cy="120" r="0.9" opacity="0.45"/>
+    <circle cx="1240" cy="320" r="1.0" opacity="0.55"/>
+  </g>
+
+  <!-- raven on left -->
+  <g transform="translate(20, 80) scale(0.95)">
+    <g fill="url(#raven2)" stroke="#000" stroke-width="0.5">
+      <!-- left wing -->
+      <path d="M 256 244
+               Q 196 200, 124 178
+               Q 60 172, 22 198
+               Q 50 210, 96 218
+               Q 150 226, 198 240
+               Q 226 250, 252 262 Z"/>
+      <path d="M 30 198 L 14 214 L 36 212 Z"/>
+      <path d="M 70 208 L 56 226 L 78 222 Z"/>
+      <path d="M 110 216 L 98 234 L 120 228 Z"/>
+      <!-- right wing -->
+      <path d="M 256 244
+               Q 316 200, 388 178
+               Q 452 172, 490 198
+               Q 462 210, 416 218
+               Q 362 226, 314 240
+               Q 286 250, 260 262 Z"/>
+      <path d="M 482 198 L 498 214 L 476 212 Z"/>
+      <path d="M 442 208 L 456 226 L 434 222 Z"/>
+      <path d="M 402 216 L 414 234 L 392 228 Z"/>
+      <!-- body -->
+      <ellipse cx="256" cy="264" rx="26" ry="62"/>
+      <!-- head -->
+      <ellipse cx="256" cy="200" rx="22" ry="24"/>
+      <!-- beak -->
+      <path d="M 256 178 L 248 156 L 264 156 Z"/>
+      <!-- tail -->
+      <path d="M 232 318 L 250 364 L 256 372 L 262 364 L 280 318 L 268 320 L 256 326 L 244 320 Z"/>
+    </g>
+    <circle cx="248" cy="198" r="6" fill="url(#eyeglow2)"/>
+    <circle cx="264" cy="198" r="6" fill="url(#eyeglow2)"/>
+    <circle cx="248" cy="198" r="1.8" fill="#fff5d4"/>
+    <circle cx="264" cy="198" r="1.8" fill="#fff5d4"/>
+  </g>
+
+  <!-- title block -->
+  <g transform="translate(580, 0)">
+    <text x="0" y="280"
+          font-family="Georgia, 'Times New Roman', serif"
+          font-size="140"
+          font-weight="700"
+          letter-spacing="6"
+          fill="url(#title)">MUNINN</text>
+
+    <line x1="6" y1="318" x2="540" y2="318" stroke="#6b5530" stroke-width="1.2" opacity="0.7"/>
+
+    <text x="8" y="370"
+          font-family="Georgia, 'Times New Roman', serif"
+          font-size="26"
+          font-style="italic"
+          fill="#c9bda0"
+          letter-spacing="1.5">Odin's memory-raven for the WDGoWars sky.</text>
+
+    <text x="8" y="430"
+          font-family="'Courier New', monospace"
+          font-size="20"
+          fill="#7b8aa8"
+          letter-spacing="1">ADS-B captures → WDGoWars, in one command.</text>
+  </g>
+
+  <!-- subtle runic accent bottom-right -->
+  <text x="1180" y="600"
+        font-family="Georgia, serif"
+        font-size="48"
+        fill="#3a4a78"
+        opacity="0.45">ᛗ ᚢ ᚾ</text>
+</svg>

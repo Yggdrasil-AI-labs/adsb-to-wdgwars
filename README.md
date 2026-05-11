@@ -1,4 +1,8 @@
-# adsb-to-wdgwars
+<p align="center">
+  <img src="assets/banner.svg" alt="Muninn — Odin's memory-raven for the WDGoWars sky" width="100%"/>
+</p>
+
+# Muninn
 
 Convert ADS-B capture files (H4M, dump1090, readsb, RTL-SDR) to WDGoWars JSON and optionally upload them.
 
@@ -11,7 +15,7 @@ One Python script. No dependencies for most formats.
 ```bash
 git clone https://github.com/HiroAlleyCat/adsb-to-wdgwars
 cd adsb-to-wdgwars
-python3 adsb_to_wdgwars.py /path/to/your-capture.txt
+python3 muninn.py /path/to/your-capture.txt
 ```
 
 Writes `your-capture.wdgwars.json` next to your input file. Done.
@@ -21,7 +25,7 @@ Writes `your-capture.wdgwars.json` next to your input file. Done.
 ## Upload to WDGoWars
 
 ```bash
-python3 adsb_to_wdgwars.py your-capture.txt --upload
+python3 muninn.py your-capture.txt --upload
 ```
 
 First time uploading? It'll ask for your API key (y/n prompt) and save it for future runs. Grab the key from your WDGoWars profile page.
@@ -58,7 +62,7 @@ Auto-detected from the first line of the file:
 
 ## Security
 
-- API key stored at `~/.config/adsb-to-wdgwars/api.key` (mode `0600` on Unix).
+- API key stored at `~/.config/muninn/api.key` (mode `0600` on Unix).
 - HMAC-SHA256-signed envelope, explicit TLS 1.2+ context.
 - Key is scrubbed from all error output.
 - No telemetry. Nothing leaves your machine unless `--upload` is set.
