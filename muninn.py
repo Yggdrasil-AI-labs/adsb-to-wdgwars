@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 import argparse
@@ -85,6 +85,88 @@ def _config_dir() -> Path:
 
 def _key_path() -> Path:
     return _config_dir() / "api.key"
+
+
+def _folders_config_path() -> Path:
+    return _config_dir() / "folders.json"
+
+
+def _desktop_path() -> Path | None:
+    """Find the user's Desktop folder if it exists. Returns None otherwise."""
+    candidates = [
+        Path.home() / "Desktop",
+        Path.home() / "OneDrive" / "Desktop",   # common on Windows w/ OneDrive
+    ]
+    for c in candidates:
+        if c.is_dir():
+            return c
+    return None
+
+
+def _load_folder_prefs() -> dict | None:
+    """Returns saved folder prefs ({'input': str, 'output': str}) or None."""
+    p = _folders_config_path()
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def _save_folder_prefs(input_dir: Path, output_dir: Path) -> None:
+    _config_dir().mkdir(parents=True, exist_ok=True)
+    _folders_config_path().write_text(json.dumps({
+        "input":  str(input_dir),
+        "output": str(output_dir),
+    }, indent=2))
+
+
+def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
+    """Ask the user where they want input/output folders. Returns
+    (input_dir, output_dir). Saves the choice for next time."""
+    print("", file=sys.stderr)
+    print("─" * 60, file=sys.stderr)
+    print(" Muninn — first-time folder setup", file=sys.stderr)
+    print("─" * 60, file=sys.stderr)
+    print("", file=sys.stderr)
+    print(" Where would you like your input/output folders?", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"   1) Right here:  {script_dir / 'input'}", file=sys.stderr)
+    print(f"                   {script_dir / 'output'}", file=sys.stderr)
+
+    desktop = _desktop_path()
+    if desktop:
+        print(f"   2) On Desktop:  {desktop / 'Muninn-Input'}", file=sys.stderr)
+        print(f"                   {desktop / 'Muninn-Output'}", file=sys.stderr)
+        choices = "[1/2]"
+    else:
+        choices = "[1]"
+
+    print("", file=sys.stderr)
+    while True:
+        try:
+            print(f" Choose {choices} (default: 1): ", end="", flush=True,
+                  file=sys.stderr)
+            ans = sys.stdin.readline().strip()
+        except (KeyboardInterrupt, EOFError):
+            ans = ""
+        if ans in ("", "1"):
+            in_dir, out_dir = script_dir / "input", script_dir / "output"
+            break
+        if ans == "2" and desktop:
+            in_dir, out_dir = desktop / "Muninn-Input", desktop / "Muninn-Output"
+            break
+        print(" (please answer 1 or 2)", file=sys.stderr)
+
+    in_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _save_folder_prefs(in_dir, out_dir)
+    print("", file=sys.stderr)
+    print(f" ✓ Saved. Drop ADS-B files in: {in_dir}", file=sys.stderr)
+    print(f"          Results will land in: {out_dir}", file=sys.stderr)
+    print("", file=sys.stderr)
+    return in_dir, out_dir
 
 
 def load_key(cli_key: str | None) -> str:
@@ -1076,14 +1158,19 @@ def main() -> int:
                      "for first-time setup")
         return check_whoami(key)
 
-    # Zero-config mode: if user ran `python3 muninn.py` with no input AND
-    # there's an `input/` folder next to the script, treat that as the input
-    # directory and `output/` as --out-dir. Lets non-technical users just
-    # drop files in a folder and run the script.
+    # Zero-config mode: if user ran `python3 muninn.py` with no input,
+    # use the saved input/output folders (prompts on first run to ask
+    # whether they want them here or on the Desktop). Lets non-technical
+    # users just drop files in a folder and run the script.
     if not args.input:
         script_dir = Path(__file__).resolve().parent
-        default_in = script_dir / "input"
-        default_out = script_dir / "output"
+        prefs = _load_folder_prefs()
+        if prefs:
+            default_in  = Path(prefs["input"])
+            default_out = Path(prefs["output"])
+        else:
+            default_in, default_out = _prompt_folder_choice(script_dir)
+
         if default_in.is_dir():
             captures = [p for p in default_in.iterdir()
                         if p.is_file() and not p.name.startswith(".")
@@ -1094,12 +1181,14 @@ def main() -> int:
                 if not args.out_dir:
                     args.out_dir = str(default_out)
                 print(f"[muninn] zero-config: processing {len(captures)} file(s) "
-                      f"from {default_in.name}/ -> {default_out.name}/",
+                      f"from {default_in} -> {default_out}",
                       file=sys.stderr)
             else:
-                print(f"[muninn] {default_in.name}/ is empty — drop your "
-                      f"ADS-B capture file(s) in there and re-run, or pass "
-                      f"a path explicitly.", file=sys.stderr)
+                print(f"[muninn] {default_in} is empty — drop your "
+                      f"ADS-B capture file(s) in there and re-run.",
+                      file=sys.stderr)
+                print(f"[muninn] (to change the folder location, delete "
+                      f"{_folders_config_path()} and re-run.)", file=sys.stderr)
                 return 0
 
     if not args.input:

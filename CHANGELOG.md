@@ -4,6 +4,16 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-05-11
+
+### Added
+- **First-run prompt asks where you want your input/output folders.** You can
+  pick either "right here in the repo" or "on the Desktop" (auto-detects
+  `~/Desktop` or `~/OneDrive/Desktop` on Windows). Choice is saved so it
+  never asks again.
+- Saved-folder config lives at `~/.config/muninn/folders.json`. Delete that
+  file to re-prompt.
+
 ## [1.2.0] — 2026-05-11
 
 ### Added
