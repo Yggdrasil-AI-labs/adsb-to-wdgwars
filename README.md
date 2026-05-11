@@ -163,7 +163,7 @@ Yes, all three. Python 3.8+ is the only requirement.
 
 ### Does this only work for ADS-B aircraft?
 
-For now, yes — only aircraft. WDGoWars also accepts WiFi/BLE captures (`/api/upload-csv`) and MeshCore nodes (same endpoint as aircraft), but those have different schemas and aren't part of this tool. PRs welcome.
+Yes — aircraft only. WiFi/BLE has its own upload path on WDGoWars; use whatever tool you already use for that.
 
 ### Can I see what the tool is doing under the hood?
 
@@ -291,7 +291,4 @@ Open an issue with:
 - The error or unexpected output
 - Your OS + Python version
 
-PRs welcome — especially for:
-- New input formats (Stratux, FlightAware Pro, custom H4M firmwares)
-- WiFi/BLE upload via `/api/upload-csv` (different code path entirely — currently out of scope)
-- MeshCore node uploads (uses same endpoint as aircraft, schema unknown)
+PRs welcome — especially for new input formats (Stratux, FlightAware Pro, custom H4M firmwares).
