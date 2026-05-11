@@ -1,0 +1,8 @@
+; Sample AVR raw Mode-S — these are real-world DF17 frames from the
+; pyModeS documentation. Lines starting with ';' are comments and ignored.
+; To decode, run: python3 adsb_to_wdgwars.py examples/avr_sample.txt
+*8D40058B58C901375147EFD09357;
+*8D40058B58C904A87F402D3B8C59;
+*8D40058B99086B07A0040A926CD7;
+*8D4840D6202CC371C32CE0576098;
+*8D4840D658C386435CC412692AD6;

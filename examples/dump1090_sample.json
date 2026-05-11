@@ -1,0 +1,32 @@
+{
+  "now": 1778446000.0,
+  "messages": 12345,
+  "aircraft": [
+    {
+      "hex": "a12345",
+      "flight": "SWA588  ",
+      "alt_baro": 40000,
+      "gs": 420.1,
+      "track": 275.5,
+      "lat": 41.46287,
+      "lon": -82.24103,
+      "seen": 2.1,
+      "seen_pos": 2.3,
+      "rssi": -18.2,
+      "squawk": "1234",
+      "category": "A3"
+    },
+    {
+      "hex": "a8af98",
+      "flight": "EJA659  ",
+      "alt_baro": 37000,
+      "gs": 449.0,
+      "track": 148.0,
+      "lat": 41.53758,
+      "lon": -81.30266,
+      "seen": 5.8,
+      "seen_pos": 6.0,
+      "rssi": -22.5
+    }
+  ]
+}

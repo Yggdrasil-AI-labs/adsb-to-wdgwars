@@ -1,0 +1,3 @@
+# Optional — only needed if your input is AVR raw Mode-S (*XXXX; format).
+# SBS-1 / dump1090 JSON / generic CSV inputs need no dependencies (stdlib only).
+pyModeS>=2.18
