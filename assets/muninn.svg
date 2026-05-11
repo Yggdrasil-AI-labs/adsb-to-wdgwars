@@ -6,17 +6,25 @@
       <stop offset="100%" stop-color="#02030a"/>
     </radialGradient>
     <linearGradient id="raven" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#0c0c12"/>
-      <stop offset="100%" stop-color="#1c1d26"/>
+      <stop offset="0%" stop-color="#0a0a10"/>
+      <stop offset="100%" stop-color="#1e202a"/>
     </linearGradient>
     <radialGradient id="eyeglow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffcf7a"/>
-      <stop offset="55%" stop-color="#c46a1a"/>
+      <stop offset="0%" stop-color="#ffdf95"/>
+      <stop offset="50%" stop-color="#d27a1c"/>
       <stop offset="100%" stop-color="#3a1604" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="moon" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#3a4a78" stop-opacity="0.25"/>
+      <stop offset="70%" stop-color="#1a2342" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#0a0e1c" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
   <rect width="512" height="512" fill="url(#sky)"/>
+
+  <!-- subtle moon halo behind raven -->
+  <circle cx="280" cy="220" r="180" fill="url(#moon)"/>
 
   <!-- starfield -->
   <g fill="#9badd0">
@@ -28,62 +36,64 @@
     <circle cx="58"  cy="298" r="1.0" opacity="0.55"/>
     <circle cx="180" cy="70"  r="0.8" opacity="0.5"/>
     <circle cx="330" cy="450" r="1.0" opacity="0.6"/>
+    <circle cx="64"  cy="160" r="0.9" opacity="0.5"/>
+    <circle cx="240" cy="40"  r="1.1" opacity="0.6"/>
   </g>
 
-  <!-- faint rune ring -->
-  <circle cx="256" cy="256" r="210" fill="none" stroke="#3a4a78" stroke-width="0.6" opacity="0.25"/>
-  <circle cx="256" cy="256" r="218" fill="none" stroke="#3a4a78" stroke-width="0.4" opacity="0.18"/>
+  <!-- perched raven, profile, facing left -->
+  <g fill="url(#raven)" stroke="#000" stroke-width="0.6" stroke-linejoin="round">
+    <!-- body + head + beak + tail traced as one silhouette -->
+    <path d="
+      M 110 252
+      C 118 232, 138 215, 168 213
+      C 188 212, 205 220, 215 232
+      L 244 224
+      L 256 232
+      L 232 248
+      C 238 256, 242 266, 244 280
+      C 245 296, 244 314, 246 332
+      C 252 340, 262 348, 276 354
+      L 396 384
+      L 412 392
+      L 408 400
+      L 392 400
+      L 280 376
+      C 284 392, 280 408, 268 416
+      C 268 432, 270 446, 272 456
+      L 256 456
+      L 252 432
+      L 244 432
+      L 240 456
+      L 224 456
+      L 222 426
+      C 208 420, 196 408, 190 392
+      C 184 372, 184 348, 188 320
+      C 188 296, 180 274, 168 264
+      C 152 260, 134 258, 120 258
+      C 116 256, 112 254, 110 252
+      Z
+    "/>
 
-  <!-- raven, wings spread, viewed from above -->
-  <g fill="url(#raven)" stroke="#000" stroke-width="0.5">
-    <!-- left wing -->
-    <path d="M 256 244
-             Q 196 200, 124 178
-             Q 60 172, 22 198
-             Q 50 210, 96 218
-             Q 150 226, 198 240
-             Q 226 250, 252 262 Z"/>
-    <!-- left wing feather tips -->
-    <path d="M 30 198 L 14 214 L 36 212 Z"/>
-    <path d="M 70 208 L 56 226 L 78 222 Z"/>
-    <path d="M 110 216 L 98 234 L 120 228 Z"/>
+    <!-- folded wing overlay (slightly darker, gives depth) -->
+    <path d="
+      M 196 248
+      C 220 246, 244 256, 256 280
+      C 262 310, 262 348, 248 370
+      C 232 374, 212 372, 200 360
+      C 188 332, 188 294, 196 248
+      Z
+    " fill="#070710" opacity="0.55"/>
 
-    <!-- right wing -->
-    <path d="M 256 244
-             Q 316 200, 388 178
-             Q 452 172, 490 198
-             Q 462 210, 416 218
-             Q 362 226, 314 240
-             Q 286 250, 260 262 Z"/>
-    <!-- right wing feather tips -->
-    <path d="M 482 198 L 498 214 L 476 212 Z"/>
-    <path d="M 442 208 L 456 226 L 434 222 Z"/>
-    <path d="M 402 216 L 414 234 L 392 228 Z"/>
-
-    <!-- body -->
-    <ellipse cx="256" cy="264" rx="26" ry="62"/>
-
-    <!-- head -->
-    <ellipse cx="256" cy="200" rx="22" ry="24"/>
-
-    <!-- beak -->
-    <path d="M 256 178 L 248 156 L 264 156 Z"/>
-    <path d="M 252 162 L 260 162 L 256 168 Z" fill="#000"/>
-
-    <!-- tail (fanned) -->
-    <path d="M 232 318
-             L 250 364
-             L 256 372
-             L 262 364
-             L 280 318
-             L 268 320
-             L 256 326
-             L 244 320 Z"/>
+    <!-- wing feather curves -->
+    <path d="M 210 270 C 232 280, 246 308, 244 340" fill="none" stroke="#000" stroke-width="0.8" opacity="0.4"/>
+    <path d="M 204 296 C 226 308, 240 332, 240 358" fill="none" stroke="#000" stroke-width="0.8" opacity="0.35"/>
+    <path d="M 200 322 C 220 332, 234 346, 236 364" fill="none" stroke="#000" stroke-width="0.8" opacity="0.3"/>
   </g>
 
-  <!-- eyes -->
-  <circle cx="248" cy="198" r="6" fill="url(#eyeglow)"/>
-  <circle cx="264" cy="198" r="6" fill="url(#eyeglow)"/>
-  <circle cx="248" cy="198" r="1.8" fill="#fff5d4"/>
-  <circle cx="264" cy="198" r="1.8" fill="#fff5d4"/>
+  <!-- single visible eye, glowing -->
+  <circle cx="172" cy="226" r="9" fill="url(#eyeglow)"/>
+  <circle cx="172" cy="226" r="2.6" fill="#fff5d4"/>
+
+  <!-- subtle perch line -->
+  <line x1="180" y1="456" x2="300" y2="456" stroke="#2a324a" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
 </svg>
