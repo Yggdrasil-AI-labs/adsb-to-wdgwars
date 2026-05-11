@@ -45,6 +45,9 @@ License: MIT
 """
 from __future__ import annotations
 
+__version__ = "1.1.0"
+GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
+
 import argparse
 import base64
 import csv
@@ -857,14 +860,81 @@ def watch_dir(watch_dir: Path, args) -> int:
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
+def _check_for_update() -> str | None:
+    """Quick non-blocking version check against the GitHub releases API.
+    Cached for 24h in the user's config dir so we don't hammer the API.
+    Returns the latest tag if newer than __version__, else None."""
+    cache = _key_path().parent / "version-check.json"
+    try:
+        if cache.exists():
+            blob = json.loads(cache.read_text())
+            if time.time() - blob.get("checked_at", 0) < 86400:
+                latest = blob.get("latest")
+                return latest if latest and latest != __version__ else None
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+            headers={"User-Agent": f"muninn/{__version__}"})
+        with urllib.request.urlopen(req, timeout=3, context=_SSL_CTX) as r:
+            data = json.loads(r.read())
+            latest = (data.get("tag_name") or "").lstrip("v")
+    except Exception:
+        return None
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"checked_at": time.time(), "latest": latest}))
+    except Exception:
+        pass
+    return latest if latest and latest != __version__ else None
+
+
+def _run_update() -> int:
+    """Try to update muninn in place. Uses `git pull` if we're in a git
+    checkout; otherwise prints the manual update instructions."""
+    import subprocess
+    script_dir = Path(__file__).resolve().parent
+    git_dir = script_dir / ".git"
+    if git_dir.exists():
+        print(f"[muninn] updating via git pull in {script_dir}", file=sys.stderr)
+        try:
+            r = subprocess.run(["git", "-C", str(script_dir), "pull", "--ff-only"],
+                               capture_output=True, text=True, timeout=30)
+            print(r.stdout.strip(), file=sys.stderr)
+            if r.returncode != 0:
+                print(r.stderr.strip(), file=sys.stderr)
+                return r.returncode
+            print(f"[muninn] now on muninn v{__version__} (re-run with --version "
+                  f"to confirm latest)", file=sys.stderr)
+            return 0
+        except FileNotFoundError:
+            print("[muninn] git not found in PATH — install git or update manually",
+                  file=sys.stderr)
+            return 1
+    else:
+        print(f"[muninn] this copy isn't a git checkout. To update:", file=sys.stderr)
+        print(f"  1. delete this folder", file=sys.stderr)
+        print(f"  2. re-download: https://github.com/{GITHUB_REPO}/releases/latest",
+              file=sys.stderr)
+        print(f"     (or `git clone https://github.com/{GITHUB_REPO}` to get auto-update)",
+              file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Convert ADS-B capture text files to WDGoWars aircraft "
-                    "JSON, and optionally upload to wdgwars.pl.",
+        description=f"Muninn v{__version__} — Convert ADS-B capture text files "
+                    f"to WDGoWars aircraft JSON, and optionally upload to wdgwars.pl.",
         epilog="Format is auto-detected (AVR raw / SBS-1 / dump1090 JSON / "
-               "generic CSV). For generic CSV inputs, pass --csv-format to "
-               "specify the column order.",
+               "generic CSV / PortaPack Mayhem). For generic CSV inputs, pass "
+               "--csv-format to specify the column order.",
     )
+    ap.add_argument("--version", action="version",
+                    version=f"muninn {__version__}")
+    ap.add_argument("--update", action="store_true",
+                    help="pull the latest version of muninn (uses git pull "
+                         "if you cloned the repo, otherwise prints download URL)")
     ap.add_argument("input", nargs="*",
                     help="ADS-B capture file (.txt, .csv, .json) "
                          "OR a directory when used with --watch. "
@@ -908,6 +978,17 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=1000,
                     help="aircraft per upload chunk (default: 1000)")
     args = ap.parse_args()
+
+    # Self-update mode — handle first, doesn't need an input
+    if args.update:
+        return _run_update()
+
+    # Soft nudge: if a newer release is out, mention it (non-blocking, daily-cached)
+    newer = _check_for_update()
+    if newer:
+        print(f"[muninn] note: v{newer} is available "
+              f"(you're on v{__version__}). Run `--update` to upgrade.",
+              file=sys.stderr)
 
     # Key management modes — handle before requiring an input file
     if args.setup:

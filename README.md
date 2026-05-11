@@ -56,7 +56,26 @@ Auto-detected from the first line of the file:
 --setup          run the interactive API-key wizard
 --whoami         show which account your saved key belongs to
 --dry-run        with --upload, build the request but don't send
+--version        print Muninn's version
+--update         pull the latest release (uses git pull if you cloned)
 ```
+
+---
+
+## Updating
+
+If you cloned the repo:
+```bash
+python3 muninn.py --update
+```
+That runs `git pull` in place. If you downloaded the ZIP instead, grab the
+newest one from the [Releases page](https://github.com/HiroAlleyCat/adsb-to-wdgwars/releases).
+
+Muninn also does a daily background check against the GitHub releases API
+and will print a one-liner if a newer version is out — no telemetry, just a
+single HEAD request, cached locally for 24h.
+
+See [CHANGELOG.md](CHANGELOG.md) for what's new in each release.
 
 ---
 
