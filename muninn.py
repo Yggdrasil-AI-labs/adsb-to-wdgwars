@@ -834,10 +834,11 @@ def main() -> int:
                "generic CSV). For generic CSV inputs, pass --csv-format to "
                "specify the column order.",
     )
-    ap.add_argument("input", nargs="?",
+    ap.add_argument("input", nargs="*",
                     help="ADS-B capture file (.txt, .csv, .json) "
                          "OR a directory when used with --watch. "
-                         "Not required when using --save-key or --whoami.")
+                         "Not required when using --save-key or --whoami. "
+                         "Unquoted paths with spaces are auto-joined.")
     ap.add_argument("--setup", action="store_true",
                     help="interactive first-time setup — prompts for your "
                          "WDGoWars API key, validates it, saves it locally.")
@@ -892,9 +893,23 @@ def main() -> int:
 
     if not args.input:
         ap.error("input file/directory is required (unless using --save-key or --whoami)")
-    path = Path(args.input)
+
+    # Be forgiving about unquoted paths with spaces on Windows.
+    # `python muninn.py C:\foo bar\file.txt`  -> args.input = ["C:\\foo", "bar\\file.txt"]
+    # Try the joined form first, fall back to first-arg-only.
+    raw = args.input if isinstance(args.input, list) else [args.input]
+    joined = " ".join(raw)
+    if len(raw) > 1 and Path(joined).exists():
+        path = Path(joined)
+        print(f"[muninn] note: input path had unquoted spaces — interpreting as "
+              f"{path.name!r}. (quote the path to silence this.)", file=sys.stderr)
+    else:
+        path = Path(raw[0])
+
     if not path.exists():
-        sys.exit(f"input not found: {path}")
+        sys.exit(f"input not found: {path}\n"
+                 f"hint: on Windows, wrap paths with spaces in double quotes:\n"
+                 f'  python3 muninn.py "C:\\path with spaces\\file.txt"')
 
     # Watch mode — directory, loop forever
     if args.watch:
