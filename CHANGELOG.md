@@ -4,6 +4,19 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-05-11
+
+### Added
+- **Desktop install option:** picking "On Desktop" now creates a single
+  `Muninn/` folder on the Desktop with `input/` and `output/` nested
+  inside (cleaner than two top-level folders).
+- **Desktop shortcut with raven icon (Windows).** After picking the
+  Desktop option, Muninn offers to create `Muninn.lnk` on the Desktop.
+  Double-click it and it opens a terminal, runs `muninn.py`, and pauses
+  so you can read the output. Uses the raven icon (`assets/muninn.ico`).
+- `assets/muninn.ico` — multi-resolution Windows icon (16/24/32/48/64/128/256)
+  generated from `muninn.png`.
+
 ## [1.3.0] — 2026-05-11
 
 ### Added

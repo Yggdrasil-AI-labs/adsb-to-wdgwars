@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 import argparse
@@ -122,9 +122,57 @@ def _save_folder_prefs(input_dir: Path, output_dir: Path) -> None:
     }, indent=2))
 
 
+def _create_desktop_shortcut(muninn_folder: Path) -> bool:
+    """Create a desktop shortcut on Windows that opens a terminal in the
+    repo and runs muninn.py. Uses PowerShell's COM bridge (no deps).
+    Returns True on success, False if not supported or failed."""
+    if os.name != "nt":
+        return False
+    desktop = _desktop_path()
+    if not desktop:
+        return False
+    script_dir = Path(__file__).resolve().parent
+    ico = script_dir / "assets" / "muninn.ico"
+    lnk = desktop / "Muninn.lnk"
+    # Find python launcher — prefer pythonw-free py launcher, fall back to python
+    py = sys.executable
+    ps_script = f'''
+$WshShell = New-Object -comObject WScript.Shell
+$s = $WshShell.CreateShortcut("{lnk}")
+$s.TargetPath = "cmd.exe"
+$s.Arguments = '/k "cd /d ""{script_dir}"" && ""{py}"" muninn.py & pause"'
+$s.WorkingDirectory = "{script_dir}"
+$s.IconLocation = "{ico}"
+$s.Description = "Muninn — ADS-B to WDGoWars converter"
+$s.Save()
+'''
+    import subprocess
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script],
+                           capture_output=True, text=True, timeout=10)
+        return r.returncode == 0 and lnk.exists()
+    except Exception:
+        return False
+
+
+def _prompt_yes_no_simple(question: str, default: bool = True) -> bool:
+    """Mini y/n prompt for use outside interactive_setup()."""
+    suffix = " [Y/n] " if default else " [y/N] "
+    try:
+        print(question + suffix, end="", flush=True, file=sys.stderr)
+        ans = sys.stdin.readline().strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print("", file=sys.stderr)
+        return default
+    if ans == "":
+        return default
+    return ans in ("y", "yes")
+
+
 def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
     """Ask the user where they want input/output folders. Returns
-    (input_dir, output_dir). Saves the choice for next time."""
+    (input_dir, output_dir). Saves the choice for next time. If they pick
+    Desktop, also offers to create a desktop shortcut with the raven icon."""
     print("", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
     print(" Muninn — first-time folder setup", file=sys.stderr)
@@ -137,13 +185,15 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
 
     desktop = _desktop_path()
     if desktop:
-        print(f"   2) On Desktop:  {desktop / 'Muninn-Input'}", file=sys.stderr)
-        print(f"                   {desktop / 'Muninn-Output'}", file=sys.stderr)
+        muninn_folder = desktop / "Muninn"
+        print(f"   2) On Desktop:  {muninn_folder}  (with input/ and output/ inside)",
+              file=sys.stderr)
         choices = "[1/2]"
     else:
         choices = "[1]"
 
     print("", file=sys.stderr)
+    chose_desktop = False
     while True:
         try:
             print(f" Choose {choices} (default: 1): ", end="", flush=True,
@@ -155,7 +205,10 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
             in_dir, out_dir = script_dir / "input", script_dir / "output"
             break
         if ans == "2" and desktop:
-            in_dir, out_dir = desktop / "Muninn-Input", desktop / "Muninn-Output"
+            muninn_folder = desktop / "Muninn"
+            in_dir = muninn_folder / "input"
+            out_dir = muninn_folder / "output"
+            chose_desktop = True
             break
         print(" (please answer 1 or 2)", file=sys.stderr)
 
@@ -166,6 +219,20 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
     print(f" ✓ Saved. Drop ADS-B files in: {in_dir}", file=sys.stderr)
     print(f"          Results will land in: {out_dir}", file=sys.stderr)
     print("", file=sys.stderr)
+
+    # Offer desktop shortcut on Windows
+    if chose_desktop and os.name == "nt":
+        if _prompt_yes_no_simple(
+                " Also create a desktop shortcut (raven icon, "
+                "double-click to run)?", default=True):
+            if _create_desktop_shortcut(muninn_folder):
+                print(f" ✓ Created Muninn.lnk on your Desktop. Double-click "
+                      f"to convert anything in input/.", file=sys.stderr)
+            else:
+                print(" (couldn't create shortcut — no big deal, "
+                      "command-line still works)", file=sys.stderr)
+            print("", file=sys.stderr)
+
     return in_dir, out_dir
 
 
