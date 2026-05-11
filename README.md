@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Muninn — Odin's memory-raven for the WDGoWars sky" width="100%"/>
+  <img src="assets/banner.png" alt="Muninn — Odin's memory-raven for the WDGoWars sky" width="100%"/>
 </p>
 
 # Muninn
