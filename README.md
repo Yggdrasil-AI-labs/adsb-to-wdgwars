@@ -114,6 +114,12 @@ Auto-detected from the first line of the file:
                    notices, range + dump1090 warnings). Errors still print.
 --no-version-check skip the daily GitHub release check entirely (use for
                    offline / privacy-conscious setups).
+--open             after writing JSON, pop open the output folder in your
+                   file manager (Explorer / Finder / xdg-open).
+--config           print the current Muninn config (folders, key, version)
+                   and exit.
+--reset            forget the saved input/output folder choice (re-prompt
+                   next run). Does not touch your API key.
 ```
 
 ---

@@ -45,12 +45,35 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
 # without plumbing the flag through every call site.
 _QUIET = False
+
+# Populated by _process_one_file() with the parent directory of every JSON
+# file actually written. `--open` reads this at end-of-run to pop them open.
+_OUT_DIRS_WRITTEN: set = set()
+
+
+def _open_folder(p) -> bool:
+    """Open `p` in the OS file manager. Best-effort, returns True on success."""
+    from pathlib import Path as _P
+    import subprocess as _sp
+    p = _P(p)
+    if not p.exists():
+        return False
+    try:
+        if os.name == "nt":
+            os.startfile(str(p))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            _sp.run(["open", str(p)], check=False)
+        else:
+            _sp.run(["xdg-open", str(p)], check=False)
+        return True
+    except Exception:
+        return False
 
 import argparse
 import base64
@@ -1124,6 +1147,7 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(web_payload, indent=2))
+        _OUT_DIRS_WRITTEN.add(out_path.parent.resolve())
         if not _QUIET:
             print(f"[muninn] OK -- wrote {len(records)} aircraft to:\n"
                   f"       {out_path}", file=sys.stderr)
@@ -1301,6 +1325,15 @@ def main() -> int:
     ap.add_argument("--no-version-check", action="store_true",
                     help="skip the daily GitHub release check entirely "
                          "(use for offline / privacy-conscious setups).")
+    ap.add_argument("--open", dest="open_after", action="store_true",
+                    help="after writing JSON, open the output folder in your "
+                         "OS file manager (Explorer / Finder / xdg-open).")
+    ap.add_argument("--config", dest="show_config", action="store_true",
+                    help="show current Muninn config (saved folders, API key "
+                         "status, version) and exit.")
+    ap.add_argument("--reset", action="store_true",
+                    help="forget the saved input/output folder choice. The next "
+                         "run re-prompts. API key is NOT touched.")
     args = ap.parse_args()
 
     global _QUIET
@@ -1309,6 +1342,31 @@ def main() -> int:
     # Self-update mode — handle first, doesn't need an input
     if args.update:
         return _run_update()
+
+    # Show config — pure read, no side effects.
+    if args.show_config:
+        print(f"Muninn v{__version__}")
+        print(f"Config dir:   {_config_dir()}")
+        prefs = _load_folder_prefs()
+        if prefs:
+            print(f"Input folder: {prefs.get('input', '?')}")
+            print(f"Output folder:{prefs.get('output', '?')}")
+        else:
+            print("Folders:      not set (next run will prompt)")
+        kp = _key_path()
+        print(f"API key:      {'set (' + str(kp) + ')' if kp.exists() else 'not set'}")
+        return 0
+
+    # Reset folder choice — does not touch the API key.
+    if args.reset:
+        p = _folders_config_path()
+        if p.exists():
+            p.unlink()
+            print(f"[muninn] removed {p} — next run will re-prompt for folder choice.",
+                  file=sys.stderr)
+        else:
+            print("[muninn] no saved folder choice to reset.", file=sys.stderr)
+        return 0
 
     # Soft nudge: if a newer release is out, mention it (non-blocking, daily-cached).
     # Skipped under --quiet and --no-version-check.
@@ -1360,11 +1418,15 @@ def main() -> int:
                       f"from {default_in} -> {default_out}",
                       file=sys.stderr)
             else:
-                print(f"[muninn] {default_in} is empty — drop your "
-                      f"ADS-B capture file(s) in there and re-run.",
+                print(f"[muninn] {default_in} is empty — drop your ADS-B "
+                      f"capture in there and re-run.", file=sys.stderr)
+                print(f"[muninn]   Supported: .txt (AVR/SBS-1/Mayhem), "
+                      f".csv (generic, --csv-format), .json (dump1090/readsb), .log",
                       file=sys.stderr)
-                print(f"[muninn] (to change the folder location, delete "
-                      f"{_folders_config_path()} and re-run.)", file=sys.stderr)
+                print(f"[muninn]   To change the folder choice, run "
+                      f"`python muninn.py --reset`.", file=sys.stderr)
+                if args.open_after:
+                    _open_folder(default_in)
                 return 0
 
     if not args.input:
@@ -1411,17 +1473,21 @@ def main() -> int:
                 print(f"[muninn] skipped {f.name} (rc={rc})", file=sys.stderr)
                 continue
             all_records.extend(recs)
-        if args.upload and all_records:
-            return _do_upload(all_records, args)
-        return 0
+        upload_rc = _do_upload(all_records, args) if (args.upload and all_records) else 0
+        if args.open_after:
+            for d in _OUT_DIRS_WRITTEN:
+                _open_folder(d)
+        return upload_rc
 
     # Single file
     rc, records = _process_one_file(path, args)
     if rc != 0:
         return rc
-    if args.upload:
-        return _do_upload(records, args)
-    return 0
+    upload_rc = _do_upload(records, args) if args.upload else 0
+    if args.open_after:
+        for d in _OUT_DIRS_WRITTEN:
+            _open_folder(d)
+    return upload_rc
 
     return 0
 

@@ -4,6 +4,23 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.2] — 2026-05-15
+
+### Added
+- **`--open`** opens the output folder in your OS file manager
+  (`explorer` on Windows, `open` on macOS, `xdg-open` elsewhere) after the
+  JSON is written. Tracks every dir Muninn actually wrote to and pops them
+  open in one batch.
+- **`--config`** prints the current state (version, config dir, saved
+  input/output folders, whether an API key is stored) and exits. Saves you
+  poking around `~/.config/muninn/` or `%APPDATA%\muninn\`.
+- **`--reset`** forgets the saved input/output folder choice so the next
+  run re-prompts. Stored API keys are not touched.
+
+### Changed
+- Empty-input message now lists every supported file extension and points
+  at `--reset` instead of telling users to delete a JSON file by hand.
+
 ## [1.5.1] — 2026-05-15
 
 ### Added
