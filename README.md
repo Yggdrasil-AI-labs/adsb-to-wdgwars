@@ -10,11 +10,29 @@
 
 # Muninn
 
-Convert ADS-B capture files (HackRF H4M, dump1090, readsb, RTL-SDR) to WDGoWars-compatible JSON and optionally upload them. One Python script, no required dependencies for most input formats.
+Convert ADS-B capture files (HackRF H4M, dump1090, readsb, RTL-SDR) to WDGoWars-compatible JSON and optionally upload them.
 
 ---
 
-## Quickstart
+## Pick your path
+
+Muninn ships in **two flavours** that share the same parsing core. Use whichever fits your setup — they don't depend on each other.
+
+| | **Web (browser)** | **CLI (terminal)** |
+|---|---|---|
+| **For** | One-off uploads, admins, anyone without Python | Headless boxes, RTL-SDR rigs, cron, scripted feeds |
+| **Install** | None — open a URL | Clone repo, run `python3 muninn.py` |
+| **Where parsing happens** | In your browser (Pyodide / WASM) | Locally with stdlib Python |
+| **Internet required** | Yes (initial page load, ~10 MB cached) | No (only for `--update` and uploads) |
+| **Runs without a display** | No | **Yes** — headless-safe |
+
+If you're running on a Raspberry Pi, a server, or anything without a desktop, **use the CLI** — the rest of this README is for you. Scroll down to [CLI install](#cli-install).
+
+If you just want to drop a file and have it uploaded, **use the web version** at [hiroalleycat.github.io/adsb-to-wdgwars](https://hiroalleycat.github.io/adsb-to-wdgwars) (deploys from the `web/` directory in this repo).
+
+---
+
+## CLI install
 
 ```bash
 git clone https://github.com/HiroAlleyCat/adsb-to-wdgwars
