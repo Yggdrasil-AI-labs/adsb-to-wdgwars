@@ -1142,6 +1142,30 @@ def _do_upload(records: list[dict], args) -> int:
                   batch_size=args.batch_size, dry_run=args.dry_run)
 
 
+
+def _check_dump1090_net() -> None:
+    import socket
+    PORTS = {
+        30104: 'Beast input (--net-bi-port) -- accepts remote aircraft feeds',
+        30001: 'raw input (--net-ri-port) -- accepts remote raw Mode-S',
+    }
+    open_ports = []
+    for port, desc in PORTS.items():
+        try:
+            with socket.create_connection(('127.0.0.1', port), timeout=1):
+                open_ports.append((port, desc))
+        except OSError:
+            pass
+    if not open_ports:
+        return
+    print('[muninn] WARNING: dump1090 network input port(s) are open on localhost:', file=sys.stderr)
+    for port, desc in open_ports:
+        print(f'[muninn]   port {port}: {desc}', file=sys.stderr)
+    print('[muninn]   Remote aircraft data may be mixing with locally received planes.', file=sys.stderr)
+    print('[muninn]   If you see aircraft far outside your area, this is the likely cause.', file=sys.stderr)
+    print('[muninn]   Fix: restart dump1090 with --net-bi-port 0 --net-ri-port 0 to block input while keeping output.', file=sys.stderr)
+
+
 def _check_for_update() -> str | None:
     """Quick non-blocking version check against the GitHub releases API.
     Cached for 24h in the user's config dir so we don't hammer the API.
@@ -1274,6 +1298,8 @@ def main() -> int:
         print(f"[muninn] note: v{newer} is available "
               f"(you're on v{__version__}). Run `--update` to upgrade.",
               file=sys.stderr)
+
+    _check_dump1090_net()
 
     # Key management modes — handle before requiring an input file
     if args.setup:
