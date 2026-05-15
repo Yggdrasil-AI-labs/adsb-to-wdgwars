@@ -4,6 +4,29 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-05-15
+
+### Added
+- **Range sanity check:** after decoding any capture file, Muninn now warns
+  if aircraft positions suggest a mix of locally received and remotely fed
+  data. It computes the median geographic position of all aircraft (robust
+  against outliers) and flags any beyond 500 km — the approximate radio
+  horizon for 1090 MHz at cruise altitude. No records are filtered; the
+  warning is informational only.
+- **dump1090 network input check:** at startup, Muninn probes
+   (Beast input) and  (raw input). If
+  either port is open it warns immediately, before processing any file. The
+  most common cause of implausible reception ranges (e.g. aircraft 1500 km
+  apart) is dump1090 running with  while a piaware or FlightAware
+  feeder silently mixes remote aircraft into the local stream. The warning
+  includes the fix: add  to block input
+  while keeping dump1090 output ports active.
+
+### Fixed
+- Range centroid now uses **median** lat/lon instead of mean, so a small
+  number of remote outliers cannot pull the centre point far enough to
+  incorrectly flag the majority of local aircraft.
+
 ## [1.4.1] — 2026-05-11
 
 ### Docs

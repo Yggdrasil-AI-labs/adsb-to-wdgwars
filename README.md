@@ -114,6 +114,26 @@ Auto-detected from the first line of the file:
 
 ---
 
+## Range and feed sanity checks
+
+Muninn runs two automatic checks every time it processes a file.
+
+### dump1090 network input check
+
+On startup, Muninn probes  (Beast input) and  (raw input). If either port is open it prints a warning before processing anything:
+
+
+
+The most common cause of implausibly large reception ranges (aircraft 1000+ km apart) is dump1090 running with  while a piaware or FlightAware feeder is also active, silently injecting remote aircraft into the local stream. No data is sent or received during the probe — it is a single connect attempt per port.
+
+### Aircraft range check
+
+After decoding, Muninn checks whether any aircraft positions are beyond 500 km from the median position of the capture — roughly the 1090 MHz radio horizon at cruise altitude. Outliers are flagged with their ICAO, callsign, and distance:
+
+
+
+No records are removed — these are warnings only. If you are deliberately aggregating data from multiple locations, you can ignore them.
+
 ## Updating
 
 ```bash

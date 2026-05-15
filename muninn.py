@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 import argparse
@@ -524,8 +524,8 @@ def _warn_range(records: list[dict]) -> None:
         return
     lats = [r["lat"] for r in records]
     lons = [r["lon"] for r in records]
-    clat = sum(lats) / len(lats)
-    clon = sum(lons) / len(lons)
+    lats.sort(); lons.sort(); mid = len(lats) // 2
+    clat = lats[mid]; clon = lons[mid]  # median: robust against remote outliers pulling the mean
     outliers = [
         r for r in records
         if _haversine_km(clat, clon, r["lat"], r["lon"]) > _ADSB_MAX_REALISTIC_KM
