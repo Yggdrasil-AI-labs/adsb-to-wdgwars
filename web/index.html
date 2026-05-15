@@ -374,6 +374,31 @@
   }
   .hint { color: var(--muted); font-size: 11px; margin-top: 10px;
     letter-spacing: 0.05em; line-height: 1.5; }
+  .hint a { color: var(--cyan); text-decoration: none; }
+  .hint a:hover { text-decoration: underline; }
+  #player-hint {
+    margin-top: 14px; padding: 12px 14px;
+    background: rgba(0,229,255,0.04);
+    border-left: 2px solid var(--cyan);
+    border-radius: 2px;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* On the public GitHub Pages deploy, hide everything related to direct
+     uploads. The site becomes pure parser/converter — drop, preview,
+     download. Upload remains available for CLI users and self-hosters
+     (where serve.py provides a same-origin proxy). */
+  body.public-deploy #upload,
+  body.public-deploy .dry-toggle,
+  body.public-deploy #upload-status,
+  body.public-deploy #dry-output,
+  body.public-deploy .settings-panel,
+  body.public-deploy .self-hosted-only { display: none !important; }
+  /* Inverse: the "for power users / CLI / self-hosted" hint only shows on the
+     public site. Locally it's redundant — those users already have the
+     upload UI right there. */
+  body:not(.public-deploy) .public-only { display: none !important; }
 
   /* Footer */
   footer {
@@ -451,17 +476,20 @@
       <th>ICAO</th><th>CALL</th><th>LAT</th><th>LON</th><th>ALT</th><th>SPD</th>
     </tr></thead><tbody></tbody></table>
     <div class="row">
-      <button id="download">↓ Download JSON</button>
-      <button id="upload" class="primary">↑ Upload to WDGoWars</button>
+      <button id="download" class="primary">↓ Download JSON</button>
+      <button id="upload">↑ Direct upload (API)</button>
       <label class="dry-toggle">
         <input type="checkbox" id="dryrun"> Dry run (build & log, do not send)
       </label>
+    </div>
+    <div class="hint" id="player-hint">
+      <strong style="color:var(--cyan)">Next step:</strong> click <em>Download JSON</em>, then drag the file into the upload form on <a href="https://wdgwars.pl" target="_blank" rel="noopener">wdgwars.pl</a>. <span class="self-hosted-only">Direct API upload is also available — click <em>Direct upload (API)</em> with your key set in the panel below.</span><span class="public-only">Power users: the <a href="https://github.com/HiroAlleyCat/adsb-to-wdgwars" target="_blank" rel="noopener">CLI</a> can upload directly via HMAC, and a self-hosted Muninn (with the included <code>serve.py</code> proxy) gets browser-side direct upload too.</span>
     </div>
     <div class="status" id="upload-status" style="margin-top:12px"></div>
     <pre id="dry-output" class="dry-output"></pre>
   </div>
 
-  <details class="panel">
+  <details class="panel settings-panel">
     <summary>uplink config</summary>
     <label>WDGoWars API key
       <input type="password" id="apikey" placeholder="paste key — stored only in this browser">

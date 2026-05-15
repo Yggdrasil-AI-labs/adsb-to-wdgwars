@@ -13,6 +13,16 @@ const uploadBtn = $("upload");
 const uploadStatusEl = $("upload-status");
 const dryrunEl = $("dryrun");
 const dryOutputEl = $("dry-output");
+
+// Public GitHub Pages deploys can't direct-upload (CORS), so the upload UI
+// (button, dry-run toggle, uplink config, player hint) is hidden when we're
+// on *.github.io. Everywhere else (localhost, self-hosted, custom domain)
+// the upload path is available — the self-hosted serve.py proxies it via
+// same-origin so CORS doesn't apply.
+const IS_PUBLIC_DEPLOY = /\.github\.io$/i.test(location.hostname);
+if (IS_PUBLIC_DEPLOY) {
+  document.body.classList.add("public-deploy");
+}
 const apikeyEl = $("apikey");
 const apiurlEl = $("apiurl");
 const versionPill = $("version-pill");
@@ -320,7 +330,24 @@ json.dumps({"data": _data_b64, "nonce": _nonce, "sig": _sig})
       );
     }
   } catch (e) {
-    setUploadStatus("Upload error: " + (e.message || e), "err");
+    const msg = (e.message || String(e));
+    // "Failed to fetch" on cross-origin POSTs is almost always CORS, since the
+    // request is well-formed and the network is up (Pyodide just loaded).
+    // Surface the player-friendly explanation instead of the raw browser error.
+    const looksLikeCors =
+      /failed to fetch/i.test(msg) ||
+      /networkerror/i.test(msg) ||
+      /load failed/i.test(msg);
+    if (looksLikeCors && !apiurlEl.value.startsWith("/")) {
+      setUploadStatus(
+        "Direct upload blocked by the WDG server's CORS policy. " +
+        "Click 'Download JSON' and upload via wdgwars.pl, or run Muninn " +
+        "self-hosted (see docs for the local-proxy setup).",
+        "warn",
+      );
+    } else {
+      setUploadStatus("Upload error: " + msg, "err");
+    }
   } finally {
     uploadBtn.disabled = false;
   }
