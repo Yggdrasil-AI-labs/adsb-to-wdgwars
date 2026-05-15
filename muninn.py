@@ -495,6 +495,68 @@ def _norm_record(icao: str, *, callsign: str = "", lat: float | None = None,
     }
 
 
+import math as _math
+
+# ── Range sanity check ───────────────────────────────────────────────────────
+
+_ADSB_MAX_REALISTIC_KM = 500  # radio horizon at cruise altitude; hard physics limit
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    phi1, phi2 = _math.radians(lat1), _math.radians(lat2)
+    dphi = _math.radians(lat2 - lat1)
+    dlambda = _math.radians(lon2 - lon1)
+    a = _math.sin(dphi / 2) ** 2 + _math.cos(phi1) * _math.cos(phi2) * _math.sin(dlambda / 2) ** 2
+    return R * 2 * _math.atan2(_math.sqrt(a), _math.sqrt(1 - a))
+
+
+def _warn_range(records: list[dict]) -> None:
+    """Warn if aircraft positions suggest mixed local + remote data.
+
+    Computes the geographic centroid of all aircraft, then flags any that are
+    beyond _ADSB_MAX_REALISTIC_KM from it.  No records are removed.  The most
+    common cause is dump1090 running with --net (Beast input open) while a
+    remote feeder like piaware or FlightAware is also active on the same
+    machine, silently mixing distant aircraft into the local session.
+    """
+    if len(records) < 2:
+        return
+    lats = [r["lat"] for r in records]
+    lons = [r["lon"] for r in records]
+    clat = sum(lats) / len(lats)
+    clon = sum(lons) / len(lons)
+    outliers = [
+        r for r in records
+        if _haversine_km(clat, clon, r["lat"], r["lon"]) > _ADSB_MAX_REALISTIC_KM
+    ]
+    if not outliers:
+        return
+    pct = 100 * len(outliers) / len(records)
+    import sys as _sys
+    print(
+        f"[muninn] WARNING: {len(outliers)} of {len(records)} aircraft "
+        f"({pct:.0f}%) are >{_ADSB_MAX_REALISTIC_KM} km from the position "
+        f"centroid — possible network-fed remote data mixed with local reception.",
+        file=_sys.stderr,
+    )
+    print(f"[muninn]   Centroid: {clat:.4f}, {clon:.4f}", file=_sys.stderr)
+    for r in outliers[:3]:
+        d = _haversine_km(clat, clon, r["lat"], r["lon"])
+        label = r["callsign"] or "(no callsign)"
+        print(
+            f"[muninn]   outlier: {r["icao"]} {label} "
+            f"@ {r["lat"]:.4f},{r["lon"]:.4f} — {d:.0f} km from centroid",
+            file=_sys.stderr,
+        )
+    if len(outliers) > 3:
+        print(f"[muninn]   ... and {len(outliers) - 3} more", file=_sys.stderr)
+    print(
+        "[muninn]   If unexpected, check whether dump1090 has --net enabled "
+        "with a remote Beast/piaware feed active on the same machine.",
+        file=_sys.stderr,
+    )
+
 # ── SBS-1 / BaseStation CSV ─────────────────────────────────────────────────
 # Field reference: http://woodair.net/sbs/article/barebones42_socket_data.htm
 # MSG,<type>,<sess>,<aircraft>,<hex>,<flightID>,<gen_date>,<gen_time>,
@@ -1034,6 +1096,7 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
         return 1, []
 
     records = list(rows.values())
+    _warn_range(records)
     print(f"[muninn] decoded {len(records)} unique aircraft with positions",
           file=sys.stderr)
 
