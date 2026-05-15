@@ -18,6 +18,12 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# GitHub deprecated Node 20 actions; force the runner to use Node 24 so
+# our v4/v5 action pins keep working past the September 2026 cutoff
+# without us having to chase every minor action release.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
