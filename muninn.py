@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.5.2"
+__version__ = "1.6.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
@@ -439,8 +439,30 @@ def check_whoami(key: str) -> int:
 
 # ── Format detection ────────────────────────────────────────────────────────
 def detect_format(path: Path) -> str:
-    """Sniff the first non-empty, non-comment line and decide the format."""
-    with path.open("r", encoding="utf-8", errors="replace") as f:
+    """Sniff the first non-empty, non-comment line and decide the format.
+
+    Transparently handles gzip — .gz / .json.gz files (tar1090 history
+    chunks) are decompressed on the fly for sniffing. The full parser does
+    the same on read."""
+    # Gzip-aware open. tar1090 emits chunk_*.json.gz; some users hand-gzip
+    # captures to keep them small. Detect by extension or magic bytes.
+    is_gz = False
+    if path.suffix == ".gz" or path.name.endswith(".json.gz"):
+        is_gz = True
+    else:
+        try:
+            with path.open("rb") as fh:
+                is_gz = fh.read(2) == b"\x1f\x8b"
+        except OSError:
+            pass
+
+    if is_gz:
+        import gzip
+        opener = lambda: gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    else:
+        opener = lambda: path.open("r", encoding="utf-8", errors="replace")
+
+    with opener() as f:
         for raw in f:
             s = raw.strip()
             if not s or s.startswith("#"):
@@ -718,19 +740,47 @@ def parse_avr(path: Path) -> dict[str, dict]:
 
 # ── dump1090 / readsb JSON ──────────────────────────────────────────────────
 def parse_json(path: Path) -> dict[str, dict]:
-    """Handle two shapes:
-      1) dump1090 aircraft.json snapshot: {"now":..., "aircraft":[{...},...]}
-      2) NDJSON / JSON-lines: one aircraft object per line
+    """Handle multiple ADS-B JSON dialects:
+      1) dump1090 / readsb aircraft.json snapshot:
+         {"now":..., "aircraft":[{"hex": ...}, ...]}
+      2) VRS (VirtualRadarServer) AircraftList.json:
+         {"acList":[{"Icao": ..., "Lat": ..., "Long": ...}, ...]}
+      3) tar1090 history chunks (gzipped dump1090 snapshots — chunk_*.json.gz)
+      4) NDJSON / JSON-lines — one aircraft object per line; field names from
+         either dialect work transparently
+      5) Bare JSON arrays of aircraft objects
     """
     rows: dict[str, dict] = {}
-    text = path.read_text(encoding="utf-8", errors="replace")
+
+    # tar1090 history chunks ship as gzipped JSON. Detect by file extension or
+    # by the 1f 8b magic bytes at the head; readers are otherwise identical.
+    if path.suffix == ".gz" or path.name.endswith(".json.gz"):
+        import gzip
+        with gzip.open(path, "rt", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    else:
+        with path.open("rb") as f:
+            head = f.read(2)
+        if head == b"\x1f\x8b":
+            import gzip
+            with gzip.open(path, "rt", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        else:
+            text = path.read_text(encoding="utf-8", errors="replace")
 
     def _ingest(ac: dict, now_ts: float | None = None):
-        icao = (ac.get("hex") or ac.get("icao") or "").upper()
+        # Field aliases cover dump1090-fa / readsb / VRS / OpenSky / generic.
+        # The case-mixed VRS keys (Icao, Lat, Long, Alt, Call, Spd, Trak) sit
+        # alongside the lower-case dump1090 keys so a single _ingest handles
+        # both dialects in NDJSON files that mix sources.
+        icao = (ac.get("hex") or ac.get("icao") or ac.get("Icao")
+                or ac.get("ICAO") or "").upper()
         if not icao:
             return
-        lat = ac.get("lat")
-        lon = ac.get("lon")
+        lat = ac.get("lat") if ac.get("lat") is not None else ac.get("Lat")
+        # VRS uses "Long" (with the g) for longitude — easy to miss.
+        lon = ac.get("lon") if ac.get("lon") is not None else (
+            ac.get("Long") if ac.get("Long") is not None else ac.get("Lng"))
         if lat is None or lon is None:
             return
         ts_str = _now_iso()
@@ -738,11 +788,15 @@ def parse_json(path: Path) -> dict[str, dict]:
             ts_str = datetime.fromtimestamp(now_ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         rec = _norm_record(
             icao=icao,
-            callsign=(ac.get("flight") or ac.get("callsign") or "").strip(),
+            callsign=(ac.get("flight") or ac.get("callsign")
+                      or ac.get("Call") or "").strip(),
             lat=lat, lon=lon,
-            alt_ft=int(ac.get("alt_baro") or ac.get("altitude") or ac.get("alt") or 0),
-            speed_kt=int(float(ac.get("gs") or ac.get("speed") or 0)),
-            heading=int(float(ac.get("track") or ac.get("heading") or 0)),
+            alt_ft=int(ac.get("alt_baro") or ac.get("altitude")
+                       or ac.get("alt") or ac.get("Alt") or 0),
+            speed_kt=int(float(ac.get("gs") or ac.get("speed")
+                               or ac.get("Spd") or 0)),
+            heading=int(float(ac.get("track") or ac.get("heading")
+                              or ac.get("Trak") or 0)),
             first_seen=ts_str,
         )
         if rec:
@@ -751,11 +805,18 @@ def parse_json(path: Path) -> dict[str, dict]:
     # Try whole-file JSON snapshot
     try:
         obj = json.loads(text)
-        if isinstance(obj, dict) and "aircraft" in obj:
-            now_ts = obj.get("now")
-            for ac in obj["aircraft"]:
-                _ingest(ac, now_ts=now_ts)
-            return rows
+        if isinstance(obj, dict):
+            # dump1090 / readsb / tar1090 chunk shape
+            if "aircraft" in obj:
+                now_ts = obj.get("now")
+                for ac in obj["aircraft"]:
+                    _ingest(ac, now_ts=now_ts)
+                return rows
+            # VRS AircraftList shape (`acList`)
+            if "acList" in obj:
+                for ac in obj["acList"]:
+                    _ingest(ac)
+                return rows
         if isinstance(obj, list):
             for ac in obj:
                 _ingest(ac)
@@ -763,7 +824,7 @@ def parse_json(path: Path) -> dict[str, dict]:
     except json.JSONDecodeError:
         pass
 
-    # Fall back to JSON-lines
+    # Fall back to JSON-lines (NDJSON)
     for line in text.splitlines():
         line = line.strip()
         if not line:

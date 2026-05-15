@@ -10,7 +10,7 @@
 
 # Muninn
 
-Convert ADS-B capture files (HackRF H4M, dump1090, readsb, RTL-SDR) to WDGoWars-compatible JSON and optionally upload them.
+Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, RTL-SDR, PortaPack Mayhem) to WDGoWars-compatible JSON and optionally upload them. Auto-detects nine input dialects and decompresses gzipped chunks transparently.
 
 ---
 

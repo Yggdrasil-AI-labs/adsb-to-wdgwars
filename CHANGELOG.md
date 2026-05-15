@@ -4,6 +4,24 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-05-15
+
+### Added
+- **VRS (VirtualRadarServer) JSON** — recognizes the `acList` wrapper and
+  maps mixed-case field names (`Icao`, `Lat`, `Long`, `Call`, `Alt`, `Spd`,
+  `Trak`) into the muninn record schema. Common among hobbyist ADS-B
+  feeders running the VRS Windows server.
+- **NDJSON / JSON-lines** — one JSON aircraft per line. Detected via the
+  same fall-through that already existed; now documented and tested.
+  Works with both dump1090 and VRS field names mixed in one stream.
+- **Gzipped JSON (`.json.gz` / `.gz`)** — tar1090 history chunks decode
+  transparently. Detected by extension or by 1f 8b magic bytes, so a
+  hand-gzipped capture also works. Same parser, no new flags.
+
+### Changed
+- `parse_json` docstring expanded to list every JSON dialect it accepts;
+  `detect_format` now sniffs through gzip transparently.
+
 ## [1.5.2] — 2026-05-15
 
 ### Added
