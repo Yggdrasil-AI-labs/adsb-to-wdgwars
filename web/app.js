@@ -11,6 +11,8 @@ const fileInput = $("file");
 const downloadBtn = $("download");
 const uploadBtn = $("upload");
 const uploadStatusEl = $("upload-status");
+const dryrunEl = $("dryrun");
+const dryOutputEl = $("dry-output");
 const apikeyEl = $("apikey");
 const apiurlEl = $("apiurl");
 const versionPill = $("version-pill");
@@ -226,13 +228,23 @@ uploadBtn.addEventListener("click", async () => {
   const BATCH = 1000;
   const records = lastPayload.records;
   const chunks = Math.ceil(records.length / BATCH);
+  const dryRun = dryrunEl.checked;
   uploadBtn.disabled = true;
   let totalImported = 0, totalSeen = 0;
+  let dryLog = "";
+  if (dryRun) {
+    dryOutputEl.textContent = "";
+    dryOutputEl.classList.remove("show");
+  }
   try {
     for (let i = 0; i < records.length; i += BATCH) {
       const chunk = records.slice(i, i + BATCH);
       const idx = Math.floor(i / BATCH) + 1;
-      setUploadStatus(`Uploading chunk ${idx}/${chunks} (${chunk.length} aircraft)...`, "");
+      setUploadStatus(
+        (dryRun ? "[DRY] Building " : "Uploading ") +
+        `chunk ${idx}/${chunks} (${chunk.length} aircraft)...`,
+        dryRun ? "warn" : "",
+      );
 
       // Let Pyodide build the envelope using the same Python code path as
       // muninn.py upload(). This guarantees byte-for-byte signature match
@@ -250,6 +262,27 @@ _nonce = secrets.token_hex(8)
 _sig = hmac.new(_api_key.encode(), (_nonce + _data_b64).encode(), hashlib.sha256).hexdigest()
 json.dumps({"data": _data_b64, "nonce": _nonce, "sig": _sig})
 `);
+
+      if (dryRun) {
+        // Show the exact request that *would* have gone out — verify HMAC,
+        // headers, and envelope structure without touching the server.
+        const env = JSON.parse(envelope);
+        const keyMask = key.length > 8
+          ? key.slice(0, 4) + "..." + key.slice(-4)
+          : "***";
+        dryLog +=
+          `─── CHUNK ${idx}/${chunks} (${chunk.length} aircraft) ─────────────\n` +
+          `POST ${url}\n` +
+          `Content-Type: application/json\n` +
+          `X-API-Key:    ${keyMask}\n` +
+          `User-Agent:   muninn-web/${muninnVersion}\n` +
+          `Accept:       application/json\n\n` +
+          `body bytes:   ${envelope.length}\n` +
+          `nonce:        ${env.nonce}\n` +
+          `sig (sha256): ${env.sig}\n` +
+          `data (b64, first 80): ${env.data.slice(0,80)}${env.data.length > 80 ? "..." : ""}\n\n`;
+        continue;
+      }
 
       const resp = await fetch(url, {
         method: "POST",
@@ -272,10 +305,20 @@ json.dumps({"data": _data_b64, "nonce": _nonce, "sig": _sig})
         totalSeen += data.aircraft_already_seen || 0;
       } catch (_) { /* server returned non-JSON; ignore counters */ }
     }
-    setUploadStatus(
-      `Done — ${records.length} aircraft sent, ${totalImported} imported, ${totalSeen} already-seen.`,
-      "ok",
-    );
+    if (dryRun) {
+      dryOutputEl.textContent = dryLog;
+      dryOutputEl.classList.add("show");
+      setUploadStatus(
+        `[DRY] Built ${chunks} chunk(s) — ${records.length} aircraft. ` +
+        `Nothing sent. Inspect the request below.`,
+        "warn",
+      );
+    } else {
+      setUploadStatus(
+        `Done — ${records.length} aircraft sent, ${totalImported} imported, ${totalSeen} already-seen.`,
+        "ok",
+      );
+    }
   } catch (e) {
     setUploadStatus("Upload error: " + (e.message || e), "err");
   } finally {

@@ -247,6 +247,52 @@
     box-shadow: 0 0 30px rgba(0,229,255,0.6);
   }
 
+  /* Dry-run toggle + output */
+  .dry-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 14px;
+    border: 1px solid var(--b-dim);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(0,0,0,0.3);
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .dry-toggle:hover { border-color: var(--b-hot); color: var(--cyan); }
+  .dry-toggle input { accent-color: var(--amber); margin: 0; }
+  .dry-toggle:has(input:checked) {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(251,191,36,0.05);
+  }
+  .dry-output {
+    display: none;
+    margin-top: 12px;
+    padding: 14px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(251,191,36,0.3);
+    border-radius: 3px;
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    overflow-x: auto;
+    max-height: 320px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .dry-output.show { display: block; }
+
   /* Pills */
   .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
   .pill {
@@ -407,8 +453,12 @@
     <div class="row">
       <button id="download">↓ Download JSON</button>
       <button id="upload" class="primary">↑ Upload to WDGoWars</button>
+      <label class="dry-toggle">
+        <input type="checkbox" id="dryrun"> Dry run (build & log, do not send)
+      </label>
     </div>
     <div class="status" id="upload-status" style="margin-top:12px"></div>
+    <pre id="dry-output" class="dry-output"></pre>
   </div>
 
   <details class="panel">
