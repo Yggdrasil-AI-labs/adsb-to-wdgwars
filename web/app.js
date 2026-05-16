@@ -162,6 +162,11 @@ json.dumps({"format": fmt, "records": records, "warning": warning})
     let friendly = `Couldn't parse ${file.name}. `;
     if (/UnicodeDecodeError|codec can't decode|invalid start byte/i.test(raw)) {
       friendly += "Looks like a binary file — Muninn needs a text capture (.txt / .csv / .json / .log) or a .gz of one.";
+    } else if (/Could not detect CSV columns|First row:/i.test(raw)) {
+      // CSV parser sys.exit() — file was treated as CSV (didn't match any
+      // other known format) and the columns weren't recognisable. Almost
+      // always means the user dropped something that isn't ADS-B at all.
+      friendly += "This doesn't look like a recognised ADS-B capture. Supported: AVR (.txt), SBS-1 (.txt), dump1090 / readsb / VRS / tar1090 JSON, NDJSON, gzipped JSON, PortaPack Mayhem (.txt).";
     } else if (/JSONDecodeError|Expecting value/i.test(raw)) {
       friendly += "The file looks like JSON but doesn't parse. Check that it's a valid dump1090 / readsb aircraft.json or NDJSON.";
     } else if (/ValueError/i.test(raw) && /unsupported/i.test(raw)) {
