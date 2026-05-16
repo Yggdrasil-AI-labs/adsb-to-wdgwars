@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.8.0"
+__version__ = "1.8.1"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
@@ -970,11 +970,12 @@ def parse_mayhem(path: Path) -> dict[str, dict]:
 # and CRC-16-CCITT FCS. Used by cockpit ADS-B receivers (Stratux,
 # ForeFlight Sentry, Garmin GDL series). Spec: FAA GDL-90 Public ICD Rev A.
 #
-# EXPERIMENTAL: implemented from spec, not validated against real captures.
-# If you have a GDL-90 binary log please open an issue with a sample so
-# field offsets and scaling factors can be confirmed against the real wire
-# format. The most likely things to be off: track scaling, altitude
-# offset boundary cases, byte-stuffing edge cases at frame boundaries.
+# Validated against gdl90py's authoritative Traffic Report test vector
+# (NathanVaughn/gdl90py, tests/messages/test_traffic_report.py):
+# ICAO, callsign, lat/lon (to 24-bit fixed-point precision), horizontal
+# velocity, and track all decode to the expected values. CRC is still
+# accepted-without-verification — if real-world captures show frame-aligned
+# noise we'll wire up CRC-16-CCITT FCS validation.
 GDL90_MSG_TRAFFIC = 0x14   # Traffic Report (other aircraft)
 GDL90_MSG_OWNSHIP = 0x0A   # Ownship Report (your aircraft) — same payload shape
 

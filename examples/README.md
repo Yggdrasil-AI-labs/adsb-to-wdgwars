@@ -18,7 +18,8 @@ aircraft count so you can verify a parser change end-to-end.
 | `vrs_sample.json`       | VRS (acList)      |  12 | Derived from `dump1090_real.json` |
 | `ndjson_sample.json`    | NDJSON / JSON-lines |  12 | One aircraft per line |
 | `tar1090_chunk_sample.json.gz` | gzipped tar1090 | 12 | Gzipped dump1090 snapshot |
-| `gdl90_synthetic.gdl90`        | GDL-90 binary     |   1 | Synthetic Traffic Report frame — needs real-capture validation |
+| `gdl90_synthetic.gdl90`        | GDL-90 binary     |   1 | Synthetic Traffic Report frame |
+| `gdl90_real.gdl90`             | GDL-90 binary     |   1 | Authoritative fixture from [NathanVaughn/gdl90py](https://github.com/NathanVaughn/gdl90py/blob/main/tests/messages/test_traffic_report.py) — ICAO `AB4549`, callsign `N825V`, 44.907°N, -122.995°W |
 | `stratux_sample.json`          | Stratux `/traffic` | 12 | Derived from `dump1090_real.json` |
 | `beast_sample.beast`           | Mode-S Beast binary |  8 | Real AVR frames wrapped in Beast (matches `avr_real.txt` baseline) |
 

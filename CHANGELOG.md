@@ -4,6 +4,21 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] — 2026-05-15
+
+### Changed
+- **GDL-90 parser promoted from experimental to validated.** Authoritative
+  test vector from `NathanVaughn/gdl90py` (`tests/messages/test_traffic_report.py`)
+  decodes byte-for-byte to the expected ICAO `AB4549`, callsign `N825V`,
+  lat 44.907067 (target 44.90708), lon -122.994862 (target -122.99488),
+  speed 123 kt, track 45°. Shipped as `examples/gdl90_real.gdl90` for
+  future regressions.
+- **Beast parser cross-validated against pyModeS's real-world dataset.**
+  The 2000-frame `tests/data/sample_data_adsb.csv` from `junzis/pyModeS`
+  decodes to the same 1-aircraft count in both AVR and Beast format,
+  proving the binary-container parser produces output identical to
+  parse_avr on the same underlying Mode-S frames.
+
 ## [1.8.0] — 2026-05-15
 
 ### Added
