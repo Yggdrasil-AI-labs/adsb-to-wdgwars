@@ -515,6 +515,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
-<script type="module" src="./app.js"></script>
+<!-- ?v= bumps any time muninn.py or app.js change so users with a cached
+     old bundle don't keep using stale code after we push. The workflow
+     rewrites this token at build time with the muninn __version__. -->
+<script type="module" src="./app.js?v=1.6.1"></script>
 </body>
 </html>

@@ -35,6 +35,17 @@ jobs:
       - name: Sync muninn.py into web/
         run: cp muninn.py web/muninn.py
 
+      # Stamp a per-deploy cache-bust onto the app.js URL in index.html.
+      # Users with a cached old app.js will fetch fresh on the next visit
+      # any time the parser version or build SHA changes.
+      - name: Cache-bust web/app.js URL in index.html
+        run: |
+          VER=$(grep -oP '__version__ = "\K[^"]+' muninn.py)
+          SHA=$(git rev-parse --short HEAD)
+          STAMP="${VER}-${SHA}"
+          sed -i "s|app.js?v=[^\"]*|app.js?v=${STAMP}|" web/index.html
+          echo "Stamped app.js?v=${STAMP}"
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
