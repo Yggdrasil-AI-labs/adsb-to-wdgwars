@@ -4,6 +4,33 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-05-15
+
+### Added (experimental)
+- **GDL-90 binary format** — the protocol cockpit ADS-B receivers speak
+  (Stratux, ForeFlight Sentry, Garmin GDL series). Decodes Traffic
+  Report (msg 0x14) and Ownship Report (msg 0x0A) frames, handles the
+  0x7E/0x7D byte-stuffing per FAA Public ICD Rev A. Detected by the
+  0x7E flag byte followed by a known message ID.
+
+  **EXPERIMENTAL — needs real-capture validation.** Implemented from
+  spec without a test corpus. The synthetic-frame round-trip in
+  `examples/gdl90_synthetic.gdl90` passes, but field offsets, scaling
+  factors, and CRC handling have not been verified against an actual
+  Stratux/Sentry log. If you have a GDL-90 binary capture, please
+  open an issue with a sample so the parser can be validated.
+
+  CRC-16-CCITT FCS validation is currently skipped — frames that
+  unescape cleanly and have a known message ID are accepted. This may
+  change if real-world streams contain frame-aligned noise.
+
+### Note on what we deliberately do NOT support
+- **OpenSky Network**, **FlightAware**, **ADS-B Exchange** and similar
+  aggregator-API formats are explicitly out of scope. WDGoWars is a
+  wardriving game — the point is uploading what *your* receiver heard.
+  Importing aggregated network data would defeat that and pollute the
+  game's contribution model.
+
 ## [1.6.1] — 2026-05-15
 
 ### Fixed

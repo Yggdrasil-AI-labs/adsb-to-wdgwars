@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.6.1"
+__version__ = "1.7.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
@@ -444,6 +444,20 @@ def detect_format(path: Path) -> str:
     Transparently handles gzip — .gz / .json.gz files (tar1090 history
     chunks) are decompressed on the fly for sniffing. The full parser does
     the same on read."""
+    # Binary GDL-90 stream: starts with 0x7E (flag byte) followed by a
+    # known msg ID. Sniff before any text-mode open to avoid decoding
+    # garbage. Restricted msg-ID list keeps a text file that happens to
+    # start with `~` from being misdetected.
+    try:
+        with path.open("rb") as fh:
+            head4 = fh.read(4)
+        if len(head4) >= 2 and head4[0] == 0x7E and head4[1] in (
+            0x00, 0x07, 0x0A, 0x0B, 0x14, 0x4D, 0x65,
+        ):
+            return "gdl90"
+    except OSError:
+        pass
+
     # Gzip-aware open. tar1090 emits chunk_*.json.gz; some users hand-gzip
     # captures to keep them small. Detect by extension or magic bytes.
     is_gz = False
@@ -923,6 +937,97 @@ def parse_mayhem(path: Path) -> dict[str, dict]:
     return out
 
 
+# ── GDL-90 binary stream ────────────────────────────────────────────────────
+# Format: serial-style framing with 0x7E start/end flags, 0x7D escape byte,
+# and CRC-16-CCITT FCS. Used by cockpit ADS-B receivers (Stratux,
+# ForeFlight Sentry, Garmin GDL series). Spec: FAA GDL-90 Public ICD Rev A.
+#
+# EXPERIMENTAL: implemented from spec, not validated against real captures.
+# If you have a GDL-90 binary log please open an issue with a sample so
+# field offsets and scaling factors can be confirmed against the real wire
+# format. The most likely things to be off: track scaling, altitude
+# offset boundary cases, byte-stuffing edge cases at frame boundaries.
+GDL90_MSG_TRAFFIC = 0x14   # Traffic Report (other aircraft)
+GDL90_MSG_OWNSHIP = 0x0A   # Ownship Report (your aircraft) — same payload shape
+
+def _gdl90_traffic_record(payload: bytes) -> dict | None:
+    """Decode one Traffic / Ownship Report payload (27 bytes after msg ID)."""
+    if len(payload) < 27:
+        return None
+    # ICAO address: 3 bytes big-endian, offset 1 (skip alert/addr-type byte 0)
+    icao_int = (payload[1] << 16) | (payload[2] << 8) | payload[3]
+    icao = f"{icao_int:06X}"
+    # Latitude: 24-bit two's complement, scale 180 / 2^23 deg per LSB
+    lat_raw = (payload[4] << 16) | (payload[5] << 8) | payload[6]
+    if lat_raw & 0x800000:
+        lat_raw -= 0x1000000
+    lat = lat_raw * (180.0 / (1 << 23))
+    # Longitude: same encoding
+    lon_raw = (payload[7] << 16) | (payload[8] << 8) | payload[9]
+    if lon_raw & 0x800000:
+        lon_raw -= 0x1000000
+    lon = lon_raw * (180.0 / (1 << 23))
+    # Altitude: 12 bits across byte 10 (8) + byte 11 high nibble (4).
+    # Scale 25 ft/LSB, offset -1000 ft. 0xFFF = invalid.
+    alt_raw = (payload[10] << 4) | (payload[11] >> 4)
+    alt_ft = 0 if alt_raw == 0xFFF else (alt_raw * 25) - 1000
+    # Horizontal velocity: 12 bits across byte 13 (8) + byte 14 high nibble (4).
+    # Units: knots. 0xFFF = invalid.
+    h_vel = (payload[13] << 4) | (payload[14] >> 4)
+    speed_kt = 0 if h_vel == 0xFFF else h_vel
+    # Track / heading: byte 16, scaled 0-255 -> 0-360 degrees.
+    track = int(payload[16] * (360.0 / 256.0))
+    # Callsign: 8 ASCII bytes, bytes 18-25. Trailing spaces / nulls stripped.
+    callsign = payload[18:26].decode("ascii", errors="replace").strip().rstrip("\x00").strip()
+    return _norm_record(
+        icao=icao, callsign=callsign, lat=lat, lon=lon,
+        alt_ft=alt_ft, speed_kt=speed_kt, heading=track,
+        first_seen=_now_iso(),
+    )
+
+
+def parse_gdl90(path: Path) -> dict[str, dict]:
+    """Parse a GDL-90 binary stream into the muninn record schema.
+
+    Frame structure (per spec):
+        0x7E <msg_id> <payload...> <crc_lo> <crc_hi> 0x7E
+    Byte-stuffing inside the frame body:
+        0x7D 0x5D  ->  literal 0x7D
+        0x7D 0x5E  ->  literal 0x7E
+    """
+    rows: dict[str, dict] = {}
+    data = path.read_bytes()
+    if not data:
+        return rows
+    # Split on the flag byte. The interior fragments are escaped frame bodies.
+    for raw_frame in data.split(b"\x7e"):
+        if len(raw_frame) < 4:
+            continue
+        # Unescape byte-stuffing.
+        unescaped = bytearray()
+        i = 0
+        while i < len(raw_frame):
+            b = raw_frame[i]
+            if b == 0x7D and i + 1 < len(raw_frame):
+                unescaped.append(raw_frame[i + 1] ^ 0x20)
+                i += 2
+            else:
+                unescaped.append(b)
+                i += 1
+        if len(unescaped) < 4:
+            continue
+        msg_id = unescaped[0]
+        # NOTE: skipping CRC-16-CCITT validation for now. If real-world
+        # captures show mis-aligned frames we will need to verify FCS to
+        # discard noise. For now we accept any frame whose layout parses.
+        payload = bytes(unescaped[1:-2])  # strip msg_id + 2 CRC bytes
+        if msg_id in (GDL90_MSG_TRAFFIC, GDL90_MSG_OWNSHIP):
+            rec = _gdl90_traffic_record(payload)
+            if rec:
+                rows[rec["icao"]] = rec
+    return rows
+
+
 # ── Generic CSV ─────────────────────────────────────────────────────────────
 def parse_csv(path: Path, fmt: str | None = None) -> dict[str, dict]:
     """Try heuristic column mapping; allow override via --csv-format header.
@@ -1178,6 +1283,8 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
         rows = parse_json(path)
     elif fmt == "mayhem":
         rows = parse_mayhem(path)
+    elif fmt == "gdl90":
+        rows = parse_gdl90(path)
     elif fmt == "csv":
         rows = parse_csv(path, fmt=args.csv_format)
     elif fmt == "empty":

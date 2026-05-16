@@ -10,7 +10,14 @@
 
 # Muninn
 
-Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, RTL-SDR, PortaPack Mayhem) to WDGoWars-compatible JSON and optionally upload them. Auto-detects nine input dialects and decompresses gzipped chunks transparently.
+Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, RTL-SDR, PortaPack Mayhem, GDL-90 cockpit receivers) to WDGoWars-compatible JSON and optionally upload them. Auto-detects 10 input dialects and decompresses gzipped chunks transparently.
+
+**Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
+formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
+supported — WDGoWars is a wardriving game, importing thousands of other
+people's aircraft would defeat the contribution model. If your data
+came from a live SDR / Stratux / PortaPack you set up, you're in the
+right place.
 
 ---
 
