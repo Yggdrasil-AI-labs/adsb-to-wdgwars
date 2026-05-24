@@ -273,6 +273,26 @@ class AdsbRegressionTests(unittest.TestCase):
         self.assertEqual(r["lat"], 42.0)
         self.assertEqual(r["type"], "ADSB")
 
+    def test_to_dump1090_fa_shape_unchanged(self):
+        # _to_dump1090_fa builds the download/stdout payload shape for
+        # ADS-B. v1.9.0 must NOT have leaked Zigbee fields into this path.
+        rec = muninn._norm_record(
+            "A8A5DD", callsign="TEST", lat=42.0, lon=-81.0,
+            alt_ft=30000, speed_kt=420, heading=270,
+        )
+        payload = muninn._to_dump1090_fa([rec])
+        self.assertIn("aircraft", payload)
+        self.assertNotIn("meshcore_nodes", payload)
+        self.assertNotIn("networks", payload)
+        self.assertEqual(len(payload["aircraft"]), 1)
+
+    def test_upload_envelope_default_is_aircraft(self):
+        # Mode defaults to 'aircraft' so existing CLI callers don't have
+        # their envelope shape change after v1.9.0.
+        import inspect
+        sig = inspect.signature(muninn.upload)
+        self.assertEqual(sig.parameters["mode"].default, "aircraft")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
