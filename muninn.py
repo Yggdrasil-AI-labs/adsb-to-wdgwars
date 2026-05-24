@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.8.1"
+__version__ = "1.9.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
@@ -76,6 +76,7 @@ def _open_folder(p) -> bool:
         return False
 
 import argparse
+import re
 import base64
 import csv
 import hashlib
@@ -438,6 +439,33 @@ def check_whoami(key: str) -> int:
 
 
 # ── Format detection ────────────────────────────────────────────────────────
+
+def _pcap_is_zigbee(path: Path) -> bool:
+    """Cheap linktype check on a pcap/pcapng file. True if 802.15.4."""
+    try:
+        with path.open("rb") as fh:
+            magic = fh.read(4)
+            if magic in (bytes.fromhex("d4c3b2a1"), bytes.fromhex("a1b2c3d4")):
+                little = magic == bytes.fromhex("d4c3b2a1")
+                rest = fh.read(20)
+                if len(rest) < 20:
+                    return False
+                linktype = int.from_bytes(rest[16:20],
+                                          "little" if little else "big")
+                return linktype in ZIGBEE_PCAP_LINKTYPES
+            if magic == bytes.fromhex("0a0d0d0a"):
+                fh.read(20)
+                blob = fh.read(4096)
+                idx = blob.find(bytes.fromhex("01000000"))
+                if idx == -1 or idx + 16 > len(blob):
+                    return False
+                linktype = int.from_bytes(blob[idx + 8:idx + 10], "little")
+                return linktype in ZIGBEE_PCAP_LINKTYPES
+    except OSError:
+        pass
+    return False
+
+
 def detect_format(path: Path) -> str:
     """Sniff the first non-empty, non-comment line and decide the format.
 
@@ -451,6 +479,11 @@ def detect_format(path: Path) -> str:
     try:
         with path.open("rb") as fh:
             head4 = fh.read(4)
+        # pcap / pcapng with 802.15.4 linktype -> Zigbee
+        if head4 in (bytes.fromhex('d4c3b2a1'), bytes.fromhex('a1b2c3d4'),
+                     bytes.fromhex('0a0d0d0a')):
+            if _pcap_is_zigbee(path):
+                return "zigbee-pcap"
         if len(head4) >= 2 and head4[0] == 0x7E and head4[1] in (
             0x00, 0x07, 0x0A, 0x0B, 0x14, 0x4D, 0x65,
         ):
@@ -503,6 +536,13 @@ def detect_format(path: Path) -> str:
             # Tab-separated AVR variants (some receivers prefix with timestamp)
             if "*" in s and s.endswith(";"):
                 return "avr-tagged"
+            # Sleipnir Zigbee CSV header: pan_id,channel,lat,lon,rssi,first_seen
+            low = s.lower()
+            if low.startswith("pan_id,") and "channel" in low and "lat" in low:
+                return "zigbee-csv"
+            # NDJSON with pan_id sniff
+            if s.startswith("{") and ("\"pan_id\"" in s or "'pan_id'" in s):
+                return "zigbee-ndjson"
             # Otherwise treat as a generic CSV — caller can hint via --csv-format
             return "csv"
     return "empty"
@@ -617,8 +657,8 @@ def _warn_range(records: list[dict]) -> None:
         d = _haversine_km(clat, clon, r["lat"], r["lon"])
         label = r["callsign"] or "(no callsign)"
         print(
-            f"[muninn]   outlier: {r["icao"]} {label} "
-            f"@ {r["lat"]:.4f},{r["lon"]:.4f} — {d:.0f} km from centroid",
+            f"[muninn]   outlier: {r['icao']} {label} "
+            f"@ {r['lat']:.4f},{r['lon']:.4f} — {d:.0f} km from centroid",
             file=_sys.stderr,
         )
     if len(outliers) > 3:
@@ -1238,8 +1278,346 @@ def _ingest_csv_row(r: list[str], fields: list[str], rows: dict[str, dict]):
 
 
 # ── WDGoWars uploader ───────────────────────────────────────────────────────
+
+# ── Zigbee / 802.15.4 (mesh channel) ────────────────────────────────────────
+# v1.9.0 — Adds support for the WDGoWars `mesh` leaderboard channel.
+# Per portal staff: mesh = 802.15.4 / Zigbee. Records ride the same
+# signed-JSON envelope as ADS-B but populate `meshcore_nodes` instead of
+# `aircraft`, with `type:"MESHCORE"` and `node_type:"ZIGBEE"`.
+#
+# Server dedupes mesh credit on PAN ID, so this module aggregates frames to
+# one record per unique PAN: dominant channel, mean GPS, mean RSSI, earliest
+# first_seen. Finer grain (per-channel, per-frame) is silently no-op'd.
+#
+# Provenance: behavior cross-checked against the lab implementation at
+# `wdgwars_upload.py::_query_zigbee` on zhnus01 (Sleipnir wardrive node).
+
+ZIGBEE_PCAP_LINKTYPES = {195, 230}  # IEEE802_15_4 WITHFCS / NOFCS
+ZIGBEE_CSV_HEADER_HINT = ("pan_id", "channel", "lat", "lon", "rssi", "first_seen")
+
+
+def _zigbee_safe_pan(pan: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "", str(pan)) or "unknown"
+
+
+def _zigbee_fmt_ts(ts: float) -> str:
+    return datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+
+def _aggregate_zigbee_pans(frames: list[dict]) -> list[dict]:
+    """Collapse a list of 802.15.4 frame dicts into one record per PAN ID.
+
+    Each input frame should have: pan_id (str), channel (int|None), lat,
+    lon, rssi, ts (unix epoch float). Frames missing pan_id or GPS are
+    skipped. Returns wdgwars-shaped meshcore_nodes records ready to upload.
+    """
+    agg: dict[str, dict] = {}
+    for f in frames:
+        pan = (f.get("pan_id") or "").strip()
+        if not pan:
+            continue
+        if pan.upper() in ("0XFFFF", "FFFF"):
+            continue  # broadcast PAN — not a real network
+        lat, lon = f.get("lat"), f.get("lon")
+        if lat is None or lon is None:
+            continue
+        try:
+            lat_f, lon_f = float(lat), float(lon)
+        except (TypeError, ValueError):
+            continue
+        try:
+            rssi_f = float(f.get("rssi") if f.get("rssi") is not None else -100.0)
+        except (TypeError, ValueError):
+            rssi_f = -100.0
+        try:
+            ts_f = float(f.get("ts") or 0)
+        except (TypeError, ValueError):
+            continue
+        slot = agg.setdefault(pan, {
+            "pan": pan, "lat_sum": 0.0, "lon_sum": 0.0, "rssi_sum": 0.0,
+            "n": 0, "first_seen": ts_f if ts_f else None, "channels": {},
+        })
+        slot["lat_sum"] += lat_f
+        slot["lon_sum"] += lon_f
+        slot["rssi_sum"] += rssi_f
+        slot["n"] += 1
+        if ts_f:
+            slot["first_seen"] = ts_f if slot["first_seen"] is None else min(
+                slot["first_seen"], ts_f)
+        ch = f.get("channel")
+        if ch is not None:
+            slot["channels"][ch] = slot["channels"].get(ch, 0) + 1
+    out: list[dict] = []
+    for s in agg.values():
+        n = s["n"] or 1
+        ch = None
+        if s["channels"]:
+            ch = max(s["channels"].items(), key=lambda kv: kv[1])[0]
+        ch_suffix = f" ch{ch}" if ch is not None else ""
+        ts = s["first_seen"] if s["first_seen"] else time.time()
+        out.append({
+            "node_id": f"zigbee-pan-{_zigbee_safe_pan(s['pan'])}",
+            "node_type": "ZIGBEE",
+            "name": f"Zigbee PAN {s['pan']}{ch_suffix}",
+            "lat": round(s["lat_sum"] / n, 6),
+            "lon": round(s["lon_sum"] / n, 6),
+            "rssi": round(s["rssi_sum"] / n, 1),
+            "first_seen": _zigbee_fmt_ts(ts),
+            "type": "MESHCORE",
+        })
+    out.sort(key=lambda r: r["first_seen"])
+    return out
+
+
+def parse_zigbee_csv(path: Path, default_lat: float | None = None,
+                    default_lon: float | None = None,
+                    default_channel: int | None = None) -> list[dict]:
+    """Parse a Sleipnir-shape CSV (pan_id,channel,lat,lon,rssi,first_seen).
+
+    `first_seen` may be a unix epoch float OR an ISO-8601 string OR a
+    YYYY-MM-DD HH:MM:SS UTC string. Missing GPS rows fall back to the
+    default_lat/default_lon if supplied.
+    """
+    import csv as _csv
+    frames: list[dict] = []
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        reader = _csv.DictReader(fh)
+        for row in reader:
+            pan = (row.get("pan_id") or row.get("pan") or "").strip()
+            if not pan:
+                continue
+            lat_raw = row.get("lat") or default_lat
+            lon_raw = row.get("lon") or default_lon
+            try: lat = float(lat_raw) if lat_raw not in (None, "") else None
+            except (TypeError, ValueError): lat = None
+            try: lon = float(lon_raw) if lon_raw not in (None, "") else None
+            except (TypeError, ValueError): lon = None
+            ch_raw = row.get("channel") or default_channel
+            try:
+                ch = int(ch_raw) if ch_raw not in (None, "") else None
+            except (TypeError, ValueError):
+                ch = None
+            ts_raw = (row.get("first_seen") or row.get("ts") or "").strip()
+            ts = _coerce_ts(ts_raw)
+            try:
+                rssi = float(row.get("rssi")) if row.get("rssi") else -100.0
+            except (TypeError, ValueError):
+                rssi = -100.0
+            frames.append({
+                "pan_id": pan, "channel": ch,
+                "lat": lat, "lon": lon, "rssi": rssi, "ts": ts,
+            })
+    return frames
+
+
+def parse_zigbee_ndjson(path: Path, default_lat: float | None = None,
+                       default_lon: float | None = None,
+                       default_channel: int | None = None) -> list[dict]:
+    """Parse newline-delimited JSON. Each record must have at least
+    `pan_id`. lat/lon/channel fall back to defaults when absent."""
+    frames: list[dict] = []
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith(("#", "//")):
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            pan = (rec.get("pan_id") or rec.get("pan") or "").strip()
+            if not pan:
+                continue
+            ch = rec.get("channel", default_channel)
+            try:
+                ch = int(ch) if ch not in (None, "") else None
+            except (TypeError, ValueError):
+                ch = None
+            ts = _coerce_ts(rec.get("first_seen") or rec.get("ts"))
+            frames.append({
+                "pan_id": pan, "channel": ch,
+                "lat": rec.get("lat", default_lat),
+                "lon": rec.get("lon", default_lon),
+                "rssi": rec.get("rssi", -100.0),
+                "ts": ts,
+            })
+    return frames
+
+
+def _coerce_ts(v) -> float:
+    """Accept unix-epoch (number or numeric string), ISO-8601, or
+    'YYYY-MM-DD HH:MM:SS' UTC; return unix epoch float. 0 on failure."""
+    if v is None or v == "":
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        pass
+    s = str(v).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).replace(
+                tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+    return 0.0
+
+
+def parse_zigbee_pcap(path: Path, default_lat: float | None = None,
+                     default_lon: float | None = None,
+                     default_channel: int | None = None) -> list[dict]:
+    """Parse a libpcap or pcapng file of 802.15.4 frames.
+
+    Extracts pan_id (dest PAN, little-endian from bytes 3-4 of the MAC
+    header), per-packet timestamp (from pcap header), and optionally
+    RSSI/channel from sniffer-specific pseudo-headers when present.
+
+    GPS is taken from `default_lat`/`default_lon` (stationary capture)
+    since stock pcap has no GPS metadata. GPX sidecar pairing is a future
+    version (v1.9.1+).
+    """
+    frames: list[dict] = []
+    with path.open("rb") as fh:
+        magic = fh.read(4)
+        if magic in (bytes.fromhex("d4c3b2a1"), bytes.fromhex("a1b2c3d4")):
+            return _parse_pcap_classic(fh, magic, default_lat, default_lon,
+                                       default_channel)
+        if magic == bytes.fromhex("0a0d0d0a"):
+            return _parse_pcapng(fh, default_lat, default_lon, default_channel)
+    return frames
+
+
+def _parse_pcap_classic(fh, magic, dlat, dlon, dchannel) -> list[dict]:
+    """libpcap classic file format. magic already consumed."""
+    import struct
+    little = magic == bytes.fromhex("d4c3b2a1")
+    endian = "<" if little else ">"
+    rest = fh.read(20)
+    if len(rest) < 20:
+        return []
+    _ver_major, _ver_minor, _tz, _sig, _snap, linktype = struct.unpack(
+        endian + "HHIIII", rest)
+    if linktype not in ZIGBEE_PCAP_LINKTYPES:
+        if not _QUIET:
+            print(f"  pcap linktype {linktype} is not 802.15.4 "
+                  "(195/230); skipping zigbee parse", file=sys.stderr)
+        return []
+    frames: list[dict] = []
+    while True:
+        hdr = fh.read(16)
+        if len(hdr) < 16:
+            break
+        ts_sec, ts_usec, incl, orig = struct.unpack(endian + "IIII", hdr)
+        data = fh.read(incl)
+        if len(data) < incl:
+            break
+        ts = ts_sec + ts_usec / 1_000_000.0
+        frame = _decode_802154_mac(data, dchannel)
+        if frame:
+            frame["ts"] = ts
+            frame["lat"] = dlat
+            frame["lon"] = dlon
+            frames.append(frame)
+    return frames
+
+
+def _parse_pcapng(fh, dlat, dlon, dchannel) -> list[dict]:
+    """pcapng — only the minimum to extract 802.15.4 frames.
+
+    Reads SHB → IDB(s) → EPB(s). Handles per-interface linktype lookup so a
+    multi-interface capture mixing 802.15.4 with anything else still works.
+    """
+    import struct
+    fh.seek(0)
+    frames: list[dict] = []
+    interfaces: list[int] = []
+    endian = "<"  # SHB byte-order magic sets this below
+    while True:
+        hdr = fh.read(8)
+        if len(hdr) < 8:
+            break
+        if hdr[:4] == bytes.fromhex("0a0d0d0a"):
+            # Section Header Block — read byte-order magic at offset 8
+            body = fh.read(int.from_bytes(hdr[4:8], "little") - 8)
+            if len(body) < 4:
+                break
+            bom = body[:4]
+            endian = "<" if bom == bytes.fromhex("4d3c2b1a") else ">"
+            # Block ends with a trailing length we already accounted for via body
+            continue
+        block_type = int.from_bytes(hdr[:4], endian)
+        block_len = int.from_bytes(hdr[4:8], endian)
+        body = fh.read(block_len - 12)  # body excludes 8-byte header + trailing 4-byte len
+        tail = fh.read(4)
+        if len(tail) < 4:
+            break
+        if block_type == 0x00000001:  # Interface Description Block
+            if len(body) >= 4:
+                linktype = int.from_bytes(body[:2], endian)
+                interfaces.append(linktype)
+        elif block_type == 0x00000006:  # Enhanced Packet Block
+            if len(body) < 20:
+                continue
+            iface_id = int.from_bytes(body[:4], endian)
+            ts_high = int.from_bytes(body[4:8], endian)
+            ts_low = int.from_bytes(body[8:12], endian)
+            cap_len = int.from_bytes(body[12:16], endian)
+            data = body[20:20 + cap_len]
+            if iface_id >= len(interfaces):
+                continue
+            if interfaces[iface_id] not in ZIGBEE_PCAP_LINKTYPES:
+                continue
+            ts = ((ts_high << 32) | ts_low) / 1_000_000.0
+            frame = _decode_802154_mac(data, dchannel)
+            if frame:
+                frame["ts"] = ts
+                frame["lat"] = dlat
+                frame["lon"] = dlon
+                frames.append(frame)
+    return frames
+
+
+def _decode_802154_mac(data: bytes, default_channel: int | None) -> dict | None:
+    """Decode the bare minimum of an 802.15.4 MAC frame to extract dest PAN.
+
+    Returns {pan_id, channel, rssi} or None if the frame is too short or
+    doesn't carry a destination PAN.
+    """
+    if len(data) < 5:
+        return None
+    fcf = int.from_bytes(data[0:2], "little")
+    frame_type = fcf & 0x07
+    if frame_type not in (0, 1, 2, 3):  # Beacon, Data, Ack, Cmd
+        return None
+    dest_mode = (fcf >> 10) & 0x3
+    src_mode = (fcf >> 14) & 0x3
+    if dest_mode == 0 and src_mode == 0:
+        return None  # no addressing info
+    # After FCF (2 bytes) + seq (1 byte) = offset 3
+    off = 3
+    pan: str | None = None
+    if dest_mode in (2, 3):  # short or extended dest
+        if off + 2 > len(data):
+            return None
+        dest_pan = int.from_bytes(data[off:off + 2], "little")
+        pan = f"0x{dest_pan:04X}"
+    if not pan:
+        return None
+    return {
+        "pan_id": pan,
+        "channel": default_channel,
+        "rssi": -100.0,  # libpcap classic carries no RSSI; sniffer-specific pseudo-headers TBD
+    }
+
+
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
-           batch_size: int = 1000, dry_run: bool = False) -> int:
+           batch_size: int = 1000, dry_run: bool = False,
+           mode: str = "aircraft") -> int:
+    """mode='aircraft' populates `aircraft` (default, ADS-B path).
+    mode='zigbee' populates `meshcore_nodes` (Zigbee/mesh path)."""
     if not records:
         print("nothing to upload", file=sys.stderr)
         return 0
@@ -1248,7 +1626,10 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     total_sent = 0
     for i in range(0, len(records), batch_size):
         chunk = records[i:i + batch_size]
-        payload = {"networks": [], "aircraft": chunk, "meshcore_nodes": []}
+        if mode == "zigbee":
+            payload = {"networks": [], "aircraft": [], "meshcore_nodes": chunk}
+        else:
+            payload = {"networks": [], "aircraft": chunk, "meshcore_nodes": []}
         body_json = json.dumps(payload, separators=(",", ":"))
         data_b64 = base64.b64encode(body_json.encode()).decode()
         nonce = secrets.token_hex(8)
@@ -1257,7 +1638,7 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         envelope = {"data": data_b64, "nonce": nonce, "sig": sig}
         body = json.dumps(envelope).encode()
         print(f"chunk {i // batch_size + 1}/{(len(records) - 1) // batch_size + 1}: "
-              f"{len(chunk)} aircraft, {len(body)} B", file=sys.stderr)
+              f"{len(chunk)} {mode}, {len(body)} B", file=sys.stderr)
         if dry_run:
             print(f"  DRY-RUN — would POST to {api_url}", file=sys.stderr)
             continue
@@ -1275,8 +1656,12 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
             with urllib.request.urlopen(req, timeout=120, context=_SSL_CTX) as resp:
                 txt = resp.read().decode("utf-8", "replace")
                 data = json.loads(txt) if txt else {}
-                imp = data.get("aircraft_imported", 0)
-                seen = data.get("aircraft_already_seen", 0)
+                if mode == "zigbee":
+                    imp = data.get("meshcore_imported", 0)
+                    seen = data.get("meshcore_already_seen", 0)
+                else:
+                    imp = data.get("aircraft_imported", 0)
+                    seen = data.get("aircraft_already_seen", 0)
                 total_imported += imp
                 total_seen += seen
                 total_sent += len(chunk)
@@ -1292,7 +1677,7 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         except Exception as e:
             print(f"  upload error: {_scrub(str(e), api_key)}", file=sys.stderr)
             return 1
-    print(f"DONE — aircraft_sent={total_sent} imported={total_imported} "
+    print(f"DONE — {mode}_sent={total_sent} imported={total_imported} "
           f"already_seen={total_seen}", file=sys.stderr)
     return 0
 
@@ -1573,6 +1958,66 @@ def _run_update() -> int:
         return 1
 
 
+
+def _run_zigbee(args) -> int:
+    """Zigbee/mesh end-to-end flow. Mirrors the ADS-B path but uses the
+    PAN-aggregate parsers and the meshcore_nodes upload mode."""
+    frames: list[dict] = []
+    for p in args.input:
+        path = Path(p)
+        if not path.is_file():
+            print(f"zigbee: skip non-file {p}", file=sys.stderr)
+            continue
+        fmt = args.format if args.format and args.format.startswith("zigbee") else None
+        if fmt is None:
+            d = detect_format(path)
+            fmt = d if d.startswith("zigbee") else None
+        if fmt is None and args.zigbee:
+            # forced: best-guess by extension
+            if path.suffix.lower() in (".pcap", ".pcapng"):
+                fmt = "zigbee-pcap"
+            elif path.suffix.lower() == ".csv":
+                fmt = "zigbee-csv"
+            else:
+                fmt = "zigbee-ndjson"
+        if fmt == "zigbee-pcap":
+            frames.extend(parse_zigbee_pcap(path, args.lat, args.lon, args.channel))
+        elif fmt == "zigbee-csv":
+            frames.extend(parse_zigbee_csv(path, args.lat, args.lon, args.channel))
+        elif fmt == "zigbee-ndjson":
+            frames.extend(parse_zigbee_ndjson(path, args.lat, args.lon, args.channel))
+        else:
+            print(f"zigbee: unrecognized format for {p}", file=sys.stderr)
+    if not frames:
+        print("zigbee: no frames parsed", file=sys.stderr)
+        return 1
+    records = _aggregate_zigbee_pans(frames)
+    if not records:
+        print(f"zigbee: {len(frames)} frames in but 0 aggregate records "
+              "(missing PAN IDs or GPS?)", file=sys.stderr)
+        return 1
+    print(f"zigbee: parsed {len(frames)} frames -> {len(records)} unique PANs",
+          file=sys.stderr)
+    if args.out or args.stdout:
+        payload = {"networks": [], "aircraft": [], "meshcore_nodes": records}
+        text = json.dumps(payload, indent=2)
+        if args.stdout:
+            print(text)
+        if args.out:
+            Path(args.out).write_text(text, encoding="utf-8")
+            print(f"zigbee: wrote {args.out}", file=sys.stderr)
+    if args.upload:
+        key = load_key(args.key)
+        return upload(records, key, args.api_url, args.batch_size,
+                      args.dry_run, mode="zigbee")
+    if not (args.out or args.stdout or args.upload):
+        # Show the preview anyway
+        print(json.dumps({"meshcore_nodes": records[:5],
+                         "shown": min(5, len(records)),
+                         "total": len(records)}, indent=2))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=f"Muninn v{__version__} — Convert ADS-B capture text files "
@@ -1618,7 +2063,8 @@ def main() -> int:
                     help="print JSON to stdout instead of writing a file")
     ap.add_argument("--no-save", action="store_true",
                     help="with --upload: skip writing the local audit-trail JSON")
-    ap.add_argument("--format", choices=["auto", "avr", "sbs1", "json", "csv", "mayhem"],
+    ap.add_argument("--format", choices=["auto", "avr", "sbs1", "json", "csv", "mayhem",
+                                          "zigbee-pcap", "zigbee-csv", "zigbee-ndjson"],
                     default="auto", help="force input format (default: auto-detect)")
     ap.add_argument("--csv-format", help="comma-separated column names for "
                     "generic CSV: icao,callsign,lat,lon,alt_ft,...")
@@ -1629,6 +2075,16 @@ def main() -> int:
     ap.add_argument("--key", help="WDGoWars API key (overrides $WDGWARS_API_KEY)")
     ap.add_argument("--api-url", default=DEFAULT_API_URL,
                     help=f"override upload endpoint (default: {DEFAULT_API_URL})")
+
+    # v1.9.0 — Zigbee / mesh channel
+    ap.add_argument("--zigbee", action="store_true",
+                    help="treat input as 802.15.4 / Zigbee (overrides autodetect)")
+    ap.add_argument("--lat", type=float, default=None,
+                    help="static GPS latitude for stationary Zigbee captures")
+    ap.add_argument("--lon", type=float, default=None,
+                    help="static GPS longitude for stationary Zigbee captures")
+    ap.add_argument("--channel", type=int, default=None,
+                    help="override 802.15.4 channel for captures that lack it")
     ap.add_argument("--batch-size", type=int, default=1000,
                     help="aircraft per upload chunk (default: 1000)")
     ap.add_argument("-q", "--quiet", action="store_true",
@@ -1647,6 +2103,16 @@ def main() -> int:
                     help="forget the saved input/output folder choice. The next "
                          "run re-prompts. API key is NOT touched.")
     args = ap.parse_args()
+
+    # v1.9.0 — Zigbee / mesh dispatch. Runs an independent flow (parse → aggregate →
+    # optional upload) when --zigbee is set or any zigbee-* format is selected.
+    _zigbee_force = bool(getattr(args, "zigbee", False)) or (
+        args.format and args.format.startswith("zigbee"))
+    if _zigbee_force or any(
+        detect_format(Path(p)).startswith("zigbee") for p in args.input
+        if Path(p).is_file()
+    ):
+        return _run_zigbee(args)
 
     global _QUIET
     _QUIET = args.quiet
