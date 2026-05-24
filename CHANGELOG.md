@@ -4,6 +4,61 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — 2026-05-23
+
+### Added
+- **Zigbee / 802.15.4 capture support — feeds the WDGoWars `mesh` channel.**
+  Per portal staff (dtMacnamara, relayed via biscut and Wild!Radio), the
+  `mesh` leaderboard counter covers 802.15.4 / Zigbee networks. Records
+  ride the same signed-JSON envelope as ADS-B aircraft but populate the
+  `meshcore_nodes` field with `type:"MESHCORE"` and `node_type:"ZIGBEE"`.
+  Server credits one observation per unique PAN ID, so Muninn aggregates
+  frames to one record per PAN (dominant channel, mean lat/lon, mean
+  RSSI, earliest first_seen) and skips broadcast PAN `0xFFFF`.
+- **Three Zigbee input formats:**
+  - `zigbee-pcap`: libpcap classic + pcapng files with 802.15.4 linktype
+    (`LINKTYPE_IEEE802_15_4_WITHFCS`=195, `LINKTYPE_IEEE802_15_4_NOFCS`=230).
+    Stock Wireshark / tshark / KillerBee `zbdump` / Sonoff sniffer / CC2531
+    output.
+  - `zigbee-csv`: header `pan_id,channel,lat,lon,rssi,first_seen`. Suits
+    hand-rolled exports from Marauder, Sleipnir wardrive nodes, or any
+    sniffer that records GPS alongside frames.
+  - `zigbee-ndjson`: one JSON record per line with at least a `pan_id`
+    field. For streaming pipelines.
+- **`detect_format()` auto-recognises 802.15.4 captures** by pcap
+  linktype and by CSV header. No flag needed for the common case.
+- **CLI flags:**
+  - `--zigbee` — force Zigbee mode (overrides autodetect)
+  - `--lat FLOAT --lon FLOAT` — static GPS for stationary captures
+    (pcap files have no GPS metadata)
+  - `--channel N` — channel override for sniffers that don't record it
+  - `--format zigbee-{pcap,csv,ndjson}` — explicit format selection
+- **First-class upload path.** `upload()` takes a `mode="zigbee"` flag
+  that swaps the envelope's `aircraft` and `meshcore_nodes` arrays and
+  reads the server's `meshcore_imported` / `meshcore_already_seen`
+  response fields. CLI dry-run, batching, and HMAC signing are unchanged
+  between modes.
+
+### Deferred
+- **Web UI Zigbee mode** is not in this release. The Pyodide
+  frontend still only handles ADS-B; the CLI is the path for Zigbee
+  contributions in v1.9.0. Web parity ships in v1.9.1.
+- **GPX sidecar pairing for mobile Zigbee captures.** Today, pcap files
+  use the `--lat/--lon` static-GPS flags (95% of real-world Zigbee
+  sniffers are stationary). GPX timestamp-matching is on the roadmap.
+- **Per-device EUI-64 grain.** Current aggregation is PAN-level because
+  the server dedupes on PAN ID. NWK/APS-layer parsing for individual
+  Zigbee end devices would need beacon and association-request frames
+  in the capture; deferred until there's data justifying the work.
+
+### Why now
+The lab-side push proved the path: 21 Zigbee PANs landed on the WDGoWars
+mesh channel on 2026-05-23, unlocking the `mesh_first` badge. The server
+shape and dedup behavior are now known and stable. LOCOSP signaled
+interest in adding native Zigbee capture to MeshCore firmware, so
+Muninn shipping the upload side now means the converter is ready the
+day MeshCore-with-Zigbee firmware lands.
+
 ## [1.8.1] — 2026-05-15
 
 ### Changed
