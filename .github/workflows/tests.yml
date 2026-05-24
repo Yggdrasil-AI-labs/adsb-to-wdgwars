@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Smoke-test CLI (--version, --help)
+        run: |
+          python muninn.py --version
+          python muninn.py --help | head -5
+
+      - name: Smoke-test detect_format on shipped examples
+        run: |
+          for f in examples/*; do
+            if [ -f "$f" ]; then
+              python -c "from pathlib import Path; from muninn import detect_format; print(f'$f -> {detect_format(Path(\"$f\"))}')"
+            fi
+          done

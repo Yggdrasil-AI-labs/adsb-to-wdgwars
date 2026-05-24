@@ -1388,8 +1388,12 @@ def parse_zigbee_csv(path: Path, default_lat: float | None = None,
             pan = (row.get("pan_id") or row.get("pan") or "").strip()
             if not pan:
                 continue
-            lat = row.get("lat") or default_lat
-            lon = row.get("lon") or default_lon
+            lat_raw = row.get("lat") or default_lat
+            lon_raw = row.get("lon") or default_lon
+            try: lat = float(lat_raw) if lat_raw not in (None, "") else None
+            except (TypeError, ValueError): lat = None
+            try: lon = float(lon_raw) if lon_raw not in (None, "") else None
+            except (TypeError, ValueError): lon = None
             ch_raw = row.get("channel") or default_channel
             try:
                 ch = int(ch_raw) if ch_raw not in (None, "") else None
