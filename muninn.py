@@ -617,8 +617,8 @@ def _warn_range(records: list[dict]) -> None:
         d = _haversine_km(clat, clon, r["lat"], r["lon"])
         label = r["callsign"] or "(no callsign)"
         print(
-            f"[muninn]   outlier: {r["icao"]} {label} "
-            f"@ {r["lat"]:.4f},{r["lon"]:.4f} — {d:.0f} km from centroid",
+            f"[muninn]   outlier: {r['icao']} {label} "
+            f"@ {r['lat']:.4f},{r['lon']:.4f} — {d:.0f} km from centroid",
             file=_sys.stderr,
         )
     if len(outliers) > 3:
