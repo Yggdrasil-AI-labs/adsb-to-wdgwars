@@ -132,9 +132,6 @@ elif fmt == "csv":
     rows = muninn.parse_csv(p, fmt=None)
 elif fmt == "empty":
     rows = {}
-elif fmt and fmt.startswith("zigbee"):
-    # v1.9.0: Zigbee/802.15.4 captures are CLI-only this release.
-    raise ValueError("ZIGBEE_CLI_ONLY: " + fmt)
 else:
     raise ValueError(f"unsupported / unknown format: {fmt}")
 
@@ -176,8 +173,6 @@ json.dumps({"format": fmt, "records": records, "warning": warning})
       friendly += "This doesn't look like a recognised ADS-B capture. Supported: AVR (.txt), SBS-1 (.txt), dump1090 / readsb / VRS / tar1090 JSON, NDJSON, gzipped JSON, PortaPack Mayhem (.txt).";
     } else if (/JSONDecodeError|Expecting value/i.test(raw)) {
       friendly += "The file looks like JSON but doesn't parse. Check that it's a valid dump1090 / readsb aircraft.json or NDJSON.";
-    } else if (/ZIGBEE_CLI_ONLY/i.test(raw)) {
-      friendly = `\u{1F4E1} Zigbee / 802.15.4 capture detected. Web upload arrives in v1.9.1 \u2014 use the CLI for now:\n\n  python3 muninn.py ${file.name} --zigbee --lat YOUR_LAT --lon YOUR_LON --upload\n\nSee the README \"Zigbee / 802.15.4 (mesh channel)\" section for full instructions.`;
     } else if (/ValueError/i.test(raw) && /unsupported/i.test(raw)) {
       friendly += "Format not recognised. Supported: AVR (.txt), SBS-1 / BaseStation (.txt), dump1090 / readsb / VRS JSON, NDJSON, gzipped JSON, PortaPack Mayhem.";
     } else {

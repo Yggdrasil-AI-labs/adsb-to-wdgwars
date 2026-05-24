@@ -12,6 +12,13 @@
 
 Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, Stratux, Mode-S Beast, RTL-SDR, PortaPack Mayhem, GDL-90 cockpit receivers) to WDGoWars-compatible JSON and optionally upload them. Auto-detects 12 input dialects and decompresses gzipped chunks transparently.
 
+> **Note on v1.9.0 (Zigbee).** v1.9.0 added 802.15.4 / Zigbee capture
+> support and was withdrawn the next day in v1.10.0. The feature
+> rested on a misread of the WDGoWars mesh channel (which is for
+> **Meshcore / LoRa**, not Zigbee). See the
+> [v1.10.0 CHANGELOG entry](CHANGELOG.md#1100--2026-05-24--retract-v190-zigbee-support)
+> for the full story. If you're on v1.9.0, please upgrade to v1.10.0.
+
 **Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
 formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
 supported — WDGoWars is a wardriving game, importing thousands of other
@@ -105,8 +112,6 @@ Auto-detected from the first line of the file:
 
 | Format | Looks like | Source |
 |---|---|---|
-| **Zigbee pcap (v1.9.0)** | libpcap/pcapng, linktype 195/230 | Wireshark, KillerBee, Sonoff sniffer, CC2531 |
-| **Zigbee CSV (v1.9.0)** | header `pan_id,channel,lat,lon,rssi,first_seen` | Sleipnir wardrive nodes, Marauder + GPS |
 | PortaPack Mayhem | `8DA39EF2... ICAO:A39EF2 EJM333 Alt:40000 Lat:... Lon:...` | HackRF PortaPack H4M |
 | AVR raw Mode-S | `*8D4840D6...;` per line | dump1090 `--raw`, readsb port 30002 (needs `pip install pyModeS`) |
 | SBS-1 / BaseStation | `MSG,3,...` CSV | dump1090 `--net`, readsb port 30003 |
@@ -115,69 +120,6 @@ Auto-detected from the first line of the file:
 
 ---
 
-
-## Zigbee / 802.15.4 (mesh channel) — v1.9.0+
-
-Muninn also feeds the WDGoWars **`mesh`** leaderboard channel, which the
-portal staff confirmed covers 802.15.4 / Zigbee networks. The CLI ships
-this in v1.9.0; the web UI is web-side parity arrives in v1.9.1.
-
-### Three input formats
-
-| Format | Looks like | Source |
-|---|---|---|
-| `zigbee-pcap` | libpcap or pcapng with linktype 195 / 230 | Wireshark, tshark, KillerBee `zbdump`, Sonoff USB sniffer, CC2531 + znp |
-| `zigbee-csv` | header row `pan_id,channel,lat,lon,rssi,first_seen` | Sleipnir wardrive nodes, Marauder + GPS exports, any hand-rolled CSV |
-| `zigbee-ndjson` | one JSON record per line with a `pan_id` field | streaming pipelines |
-
-Auto-detected by pcap linktype or CSV header. No flag needed in the common case.
-
-### Stationary captures need static GPS
-
-`.pcap` files have no GPS metadata. For a stationary home sniffer, supply
-`--lat` and `--lon` once and Muninn stamps every PAN with that position:
-
-```bash
-python3 muninn.py home-zigbee.pcap --upload --lat 41.4712 --lon -81.7887
-```
-
-For CSV and NDJSON inputs, GPS is per-row so no `--lat/--lon` flag is needed.
-
-For a roving sniffer, GPX-sidecar pairing is planned for v1.9.1. Until then,
-roving captures should be exported as CSV with per-row GPS.
-
-### What lands on the leaderboard
-
-Frames are aggregated to **one record per unique PAN ID** (dominant channel,
-mean lat/lon, mean RSSI, earliest first_seen). The WDGoWars server
-dedupes mesh credit on PAN ID alone, so finer grain is silently no-op'd.
-Broadcast PAN `0xFFFF` is filtered.
-
-A successful upload returns:
-
-```json
-{"ok":true,"meshcore_imported":N,"meshcore_already_seen":N,"new_badges":[...]}
-```
-
-The first push unlocks the `mesh_first` badge.
-
-### Examples
-
-```bash
-# A KillerBee dump captured at home; static GPS, autodetect linktype
-python3 muninn.py zb-home.pcap --lat 41.4712 --lon -81.7887 --upload
-
-# A Sleipnir CSV with GPS already in each row; force Zigbee mode (override autodetect)
-python3 muninn.py sleipnir-zigbee.csv --zigbee --upload
-
-# Preview without uploading
-python3 muninn.py capture.pcap --lat 41.47 --lon -81.79 --stdout | jq '.meshcore_nodes[:3]'
-
-# Dry-run to inspect the envelope shape
-python3 muninn.py capture.pcap --lat 41.47 --lon -81.79 --upload --dry-run
-```
-
----
 ## All command-line flags
 
 ```
