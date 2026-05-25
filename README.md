@@ -219,9 +219,11 @@ No records are removed — these are warnings only. If you are deliberately aggr
 python3 muninn.py --update
 ```
 
-That runs `git pull` in place if you cloned the repo. If you downloaded the ZIP instead, grab the newest one from the [Releases page](https://github.com/HiroAlleyCat/adsb-to-wdgwars/releases).
+Don’t want to type? Double-click `update.bat` (Windows) or `update.sh` (Mac/Linux) from the Muninn folder. Same result, no terminal.
 
-Muninn also does a once-a-day background check against the GitHub releases API and prints a one-liner if a newer version is out. No telemetry — single HEAD request, cached locally for 24h. See [CHANGELOG.md](CHANGELOG.md) for per-release notes.
+`--update` runs `git pull` if you cloned the repo, or downloads the latest `muninn.py` from GitHub if you grabbed the ZIP. Either install path works.
+
+Muninn also does a once-a-day background check against the GitHub releases API and prints a one-liner on launch if a newer version is out. No telemetry, single HEAD request, cached locally for 24h. See [CHANGELOG.md](CHANGELOG.md) for per-release notes.
 
 ---
 
