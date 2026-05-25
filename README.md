@@ -63,6 +63,8 @@ Confirm it is working. You should see aircraft counts climbing:
 curl -s http://localhost:8080/data/aircraft.json | jq '.aircraft | length'
 ```
 
+Not sure where your decoder writes `aircraft.json`? Run `sudo find /run /var -name aircraft.json 2>/dev/null` to locate it. Common spots: `/run/dump1090-fa/aircraft.json` (FlightAware), `/run/readsb/aircraft.json` (readsb), `/run/adsbfi-feed/aircraft.json` (ADS-B Fi feeder).
+
 Then point Muninn at the decoder's output:
 
 ```bash
