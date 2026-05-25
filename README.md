@@ -46,6 +46,41 @@ If you just want to drop a file and have it uploaded, **use the web version** at
 
 ---
 
+## Got components but no decoded data yet?
+
+Muninn does not talk to your RTL-SDR directly. It consumes the output of a decoder that does. If you just unboxed a dongle and antenna, install a decoder first:
+
+| OS | Recommended decoder | How to install |
+|---|---|---|
+| **Raspberry Pi / Linux** | dump1090-fa | Follow FlightAware's installer at [flightaware.com/adsb/piaware/install](https://flightaware.com/adsb/piaware/install). You do not have to share with FlightAware; local decoding works either way. |
+| **Windows** | dump1090-win | Install [Zadig](https://zadig.akeo.ie), replace the dongle driver with WinUSB, then grab [dump1090-win](https://github.com/MalcolmRobb/dump1090) and run `dump1090.exe --net --write-json out`. |
+| **macOS** | dump1090 | `brew install dump1090 && dump1090 --net --write-json /tmp/dump1090` |
+
+Confirm it is working. You should see aircraft counts climbing:
+
+```bash
+# Pi / Linux (dump1090-fa default path)
+curl -s http://localhost:8080/data/aircraft.json | jq '.aircraft | length'
+```
+
+Then point Muninn at the decoder's output:
+
+```bash
+# One-shot: convert + upload the current snapshot
+python3 muninn.py /run/dump1090-fa/aircraft.json --upload
+
+# Continuous: watch the decoder's output folder
+python3 muninn.py --watch /run/dump1090-fa --watch-glob 'aircraft.json'
+```
+
+### Antenna reality check
+
+The small whip that ships in most RTL-SDR kits is a general-purpose scanner antenna and will see almost nothing at 1090 MHz. A proper ADS-B antenna (quarter-wave around 6.8 cm, a FlightAware stub, or a Stratux / RadarBox dipole) will jump your aircraft count by 5 to 10 times. Indoor near a window works for testing; outdoor or rooftop is ideal.
+
+If `rtl_test` finds the dongle but no aircraft show up after 5 minutes, the antenna is almost always the cause, not the software.
+
+---
+
 ## CLI install
 
 ```bash
