@@ -1574,17 +1574,61 @@ def _run_update() -> int:
                   f"to confirm latest)", file=sys.stderr)
             return 0
         except FileNotFoundError:
-            print("[muninn] git not found in PATH — install git or update manually",
+            print("[muninn] git not found in PATH. Install git, or download muninn.py manually.",
                   file=sys.stderr)
             return 1
     else:
-        print(f"[muninn] this copy isn't a git checkout. To update:", file=sys.stderr)
-        print(f"  1. delete this folder", file=sys.stderr)
-        print(f"  2. re-download: https://github.com/{GITHUB_REPO}/releases/latest",
-              file=sys.stderr)
-        print(f"     (or `git clone https://github.com/{GITHUB_REPO}` to get auto-update)",
+        return _update_from_raw(script_dir)
+
+
+def _update_from_raw(script_dir: Path) -> int:
+    """Non-git fallback for --update: fetch muninn.py from raw GitHub and
+    replace the local file atomically. Works for ZIP-downloaded installs."""
+    target = script_dir / "muninn.py"
+    raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/muninn.py"
+    print(f"[muninn] not a git checkout. Fetching latest muninn.py from "
+          f"{raw_url}", file=sys.stderr)
+    try:
+        req = urllib.request.Request(raw_url, headers={
+            "User-Agent": f"muninn/{__version__}"})
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as r:
+            new_text = r.read().decode("utf-8")
+    except Exception as e:
+        print(f"[muninn] download failed: {e}", file=sys.stderr)
+        print(f"[muninn] manual download: "
+              f"https://github.com/{GITHUB_REPO}/releases/latest", file=sys.stderr)
+        return 1
+    try:
+        import ast
+        ast.parse(new_text)
+    except SyntaxError as e:
+        print(f"[muninn] downloaded file failed to parse, aborting: {e}",
               file=sys.stderr)
         return 1
+    import re as _re
+    m = _re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']',
+                   new_text, _re.MULTILINE)
+    new_version = m.group(1) if m else "?"
+    if new_version == __version__:
+        print(f"[muninn] already on the latest (v{__version__}). Nothing to do.",
+              file=sys.stderr)
+        return 0
+    tmp = target.with_suffix(".py.new")
+    try:
+        tmp.write_text(new_text, encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError as e:
+        print(f"[muninn] couldn't write {target}: {e}", file=sys.stderr)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return 1
+    print(f"[muninn] updated v{__version__} to v{new_version}", file=sys.stderr)
+    print(f"[muninn] re-run muninn to pick up the new code "
+          f"(the current process is still running the old version).",
+          file=sys.stderr)
+    return 0
 
 
 def main() -> int:
@@ -1599,7 +1643,7 @@ def main() -> int:
                     version=f"muninn {__version__}")
     ap.add_argument("--update", action="store_true",
                     help="pull the latest version of muninn (uses git pull "
-                         "if you cloned the repo, otherwise prints download URL)")
+                         "if you cloned the repo, otherwise downloads muninn.py from GitHub)")
     ap.add_argument("input", nargs="*",
                     help="ADS-B capture file (.txt, .csv, .json) "
                          "OR a directory when used with --watch. "
