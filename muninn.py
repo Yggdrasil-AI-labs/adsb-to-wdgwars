@@ -544,6 +544,17 @@ def _to_dump1090_fa(records: list[dict]) -> dict:
     }
 
 
+def _coerce_int(v) -> int:
+    """dump1090/readsb encode on-ground aircraft as alt_baro="ground". Treat
+    that and any other non-numeric value as 0 instead of crashing."""
+    if v is None:
+        return 0
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _norm_record(icao: str, *, callsign: str = "", lat: float | None = None,
                  lon: float | None = None, alt_ft: int = 0, speed_kt: int = 0,
                  heading: int = 0, first_seen: str | None = None) -> dict | None:
@@ -825,12 +836,12 @@ def parse_json(path: Path) -> dict[str, dict]:
                       or ac.get("Call") or ac.get("Tail")
                       or ac.get("Reg") or "").strip(),
             lat=lat, lon=lon,
-            alt_ft=int(ac.get("alt_baro") or ac.get("altitude")
-                       or ac.get("alt") or ac.get("Alt") or 0),
-            speed_kt=int(float(ac.get("gs") or ac.get("speed")
-                               or ac.get("Spd") or ac.get("Speed") or 0)),
-            heading=int(float(ac.get("track") or ac.get("heading")
-                              or ac.get("Trak") or ac.get("Track") or 0)),
+            alt_ft=_coerce_int(ac.get("alt_baro") or ac.get("altitude")
+                               or ac.get("alt") or ac.get("Alt") or 0),
+            speed_kt=_coerce_int(ac.get("gs") or ac.get("speed")
+                                 or ac.get("Spd") or ac.get("Speed") or 0),
+            heading=_coerce_int(ac.get("track") or ac.get("heading")
+                                or ac.get("Trak") or ac.get("Track") or 0),
             first_seen=ts_str,
         )
         if rec:
@@ -1228,9 +1239,9 @@ def _ingest_csv_row(r: list[str], fields: list[str], rows: dict[str, dict]):
         icao=icao,
         callsign=d.get("callsign", ""),
         lat=lat, lon=lon,
-        alt_ft=int(float(d.get("alt_ft") or d.get("alt") or d.get("altitude") or 0)),
-        speed_kt=int(float(d.get("speed_kt") or d.get("speed") or d.get("gs") or 0)),
-        heading=int(float(d.get("heading") or d.get("track") or d.get("cog") or 0)),
+        alt_ft=_coerce_int(d.get("alt_ft") or d.get("alt") or d.get("altitude") or 0),
+        speed_kt=_coerce_int(d.get("speed_kt") or d.get("speed") or d.get("gs") or 0),
+        heading=_coerce_int(d.get("heading") or d.get("track") or d.get("cog") or 0),
         first_seen=d.get("first_seen") or d.get("timestamp"),
     )
     if rec:

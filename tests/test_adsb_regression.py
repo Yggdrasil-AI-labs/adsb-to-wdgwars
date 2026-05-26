@@ -56,6 +56,25 @@ class AdsbRegressionTests(unittest.TestCase):
         self.assertEqual(r["lat"], 42.0)
         self.assertEqual(r["type"], "ADSB")
 
+    def test_parse_json_handles_ground_alt(self):
+        """dump1090/readsb encode on-ground aircraft as alt_baro="ground".
+        Reported by Badger 2026-05-26; previously crashed _ingest with
+        ValueError: invalid literal for int() with base 10: 'ground'."""
+        import json
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        )
+        json.dump({"now": 1.0, "aircraft": [
+            {"hex": "A12345", "lat": 39.0, "lon": -82.0,
+             "alt_baro": "ground", "gs": 0, "track": 0, "flight": "GROUNDY"},
+            {"hex": "B67890", "lat": 39.1, "lon": -82.1,
+             "alt_baro": 3500, "gs": 180, "track": 90, "flight": "INAIR"},
+        ]}, f)
+        f.close()
+        rows = muninn.parse_json(Path(f.name))
+        self.assertEqual(rows["A12345"]["alt_ft"], 0)
+        self.assertEqual(rows["B67890"]["alt_ft"], 3500)
+
     def test_to_dump1090_fa_shape_unchanged(self):
         rec = muninn._norm_record(
             "A8A5DD", callsign="TEST", lat=42.0, lon=-81.0,
