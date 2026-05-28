@@ -4,6 +4,32 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.1] - 2026-05-28 - Stay on HMAC `/api/upload/`, fix leading-zero ICAOs
+
+### Fixed
+- **`_norm_record` no longer strips leading zeros from the ICAO.** The
+  previous `icao.upper().lstrip("0")` turned valid Mode-S addresses like
+  `0DB36A` into `DB36A`, which fails the server's `^[0-9A-F]{6}$`
+  validation and silently dropped on import. ICAOs are now passed through
+  uppercase as-is.
+- Default `--batch-size` lowered from 1000 to 500, matching the server's
+  preferred 100-500 per request.
+
+### Reverted
+- v1.11.0 switched the upload endpoint to `/api/upload-csv` (multipart)
+  based on the assumption that the HMAC `/api/upload/` path had been
+  deprecated. That was wrong: a server-side v4 audit patch had
+  temporarily over-narrowed the aircraft Type allowlist, silently
+  skipping every record that carried a DO-260B emitter category. The
+  upstream maintainer reverted the filter and confirmed the HMAC
+  envelope at `/api/upload/` is the canonical aircraft route. Muninn
+  swaps back to it.
+
+### Verified
+- Live RTL-SDR end-to-end after the server fix: 10 aircraft sent, 4
+  imported, 6 already on file, 4 new badges. HMAC envelope + ICAO fix
+  both confirmed in one run.
+
 ## [1.10.0] — 2026-05-24 — Retract v1.9.0 Zigbee support
 
 ### Removed
