@@ -19,6 +19,15 @@ Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRada
 > [v1.10.0 CHANGELOG entry](CHANGELOG.md#1100--2026-05-24--retract-v190-zigbee-support)
 > for the full story. If you're on v1.9.0, please upgrade to v1.10.0.
 
+> **Note on v1.11.0 (endpoint switch).** v1.11.0 briefly moved the
+> upload from `/api/upload/` (HMAC envelope) to `/api/upload-csv`
+> (multipart) after misreading a server-side regression as a path
+> deprecation. The HMAC envelope at `/api/upload/` is the canonical
+> aircraft route and is not going away. v1.11.1 reverts that and
+> also fixes a latent ICAO-leading-zero bug that was silently
+> dropping valid Mode-S addresses on import. If you're on v1.11.0,
+> please upgrade to v1.11.1.
+
 **Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
 formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
 supported — WDGoWars is a wardriving game, importing thousands of other
@@ -176,7 +185,7 @@ Auto-detected from the first line of the file:
 --dry-run          with --upload, build the request but don't send
 --key KEY          one-shot override of the stored API key
 --api-url URL      override the upload endpoint
---batch-size N     aircraft per upload chunk (default: 1000)
+--batch-size N     aircraft per upload chunk (default: 500)
 --version          print Muninn's version
 --update           pull the latest release (git pull if you cloned)
 -q, --quiet        suppress informational output (banners, format/decoded
