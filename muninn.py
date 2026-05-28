@@ -26,9 +26,9 @@ Output is a JSON array of:
    "first_seen": "YYYY-MM-DD HH:MM:SS",  # UTC
    "type": "ADSB"}
 
-If --upload is given, the array is wrapped in the documented HMAC-SHA256
-envelope and POSTed to https://wdgwars.pl/api/upload/ (the **trailing slash
-is required** — without it the server rejects every payload as a replay).
+If --upload is given, the dump1090-fa shape is POSTed as a multipart file to
+https://wdgwars.pl/api/upload-csv with an X-API-Key header. This is the same
+endpoint the WDGoWars web-form drag-and-drop uses.
 
 Examples
 --------
@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.10.0"
+__version__ = "1.11.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
@@ -76,18 +76,15 @@ def _open_folder(p) -> bool:
         return False
 
 import argparse
-import base64
 import csv
-import hashlib
-import hmac
 import json
 import os
-import secrets
 import sys
 import time
 import ssl
 import urllib.error
 import urllib.request
+import uuid
 
 # Explicit SSL context — defense in depth. urllib.request defaults to system
 # trust store and full cert verification since Python 3.4.3 (PEP 476), but
@@ -98,7 +95,7 @@ _SSL_CTX = ssl.create_default_context()
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_API_URL = "https://wdgwars.pl/api/upload/"
+DEFAULT_API_URL = "https://wdgwars.pl/api/upload-csv"
 ME_API_URL = "https://wdgwars.pl/api/me"
 
 # Persistent API key location — XDG-style on Linux/Mac, %APPDATA% on Windows.
@@ -1266,29 +1263,35 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         print("nothing to upload", file=sys.stderr)
         return 0
     total_imported = 0
-    total_seen = 0
+    total_dups = 0
     total_sent = 0
     for i in range(0, len(records), batch_size):
         chunk = records[i:i + batch_size]
-        payload = {"networks": [], "aircraft": chunk, "meshcore_nodes": []}
-        body_json = json.dumps(payload, separators=(",", ":"))
-        data_b64 = base64.b64encode(body_json.encode()).decode()
-        nonce = secrets.token_hex(8)
-        sig = hmac.new(api_key.encode(), (nonce + data_b64).encode(),
-                       hashlib.sha256).hexdigest()
-        envelope = {"data": data_b64, "nonce": nonce, "sig": sig}
-        body = json.dumps(envelope).encode()
+        # Server accepts the dump1090-fa / readsb aircraft.json shape, posted
+        # as a multipart file. Same path the web-form drag-and-drop uploads
+        # through. The legacy HMAC envelope path at /api/upload/ stopped
+        # importing aircraft after a 2026-05 backend update.
+        file_payload = _to_dump1090_fa(chunk)
+        file_bytes = json.dumps(file_payload).encode()
+        boundary = "muninn-" + uuid.uuid4().hex
+        body = (
+            f"--{boundary}\r\n".encode()
+            + b'Content-Disposition: form-data; name="file"; filename="aircraft.json"\r\n'
+            + b'Content-Type: application/json\r\n\r\n'
+            + file_bytes
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
         print(f"chunk {i // batch_size + 1}/{(len(records) - 1) // batch_size + 1}: "
               f"{len(chunk)} aircraft, {len(body)} B", file=sys.stderr)
         if dry_run:
-            print(f"  DRY-RUN — would POST to {api_url}", file=sys.stderr)
+            print(f"  DRY-RUN, would POST to {api_url}", file=sys.stderr)
             continue
         req = urllib.request.Request(
             api_url, data=body, method="POST",
             headers={
-                "Content-Type": "application/json",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "X-API-Key": api_key,
-                "User-Agent": "muninn/1.0",
+                "User-Agent": f"muninn/{__version__}",
                 "Accept": "application/json",
             },
         )
@@ -1297,40 +1300,41 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
             with urllib.request.urlopen(req, timeout=120, context=_SSL_CTX) as resp:
                 txt = resp.read().decode("utf-8", "replace")
                 data = json.loads(txt) if txt else {}
-                imp = data.get("aircraft_imported", 0) or 0
-                seen = data.get("aircraft_already_seen", 0) or 0
+                imp = int(data.get("imported", 0) or 0)
+                dups = int(data.get("duplicates", 0) or 0)
+                no_gps = int(data.get("no_gps", 0) or 0)
+                bad_rows = int(data.get("bad_rows", 0) or 0)
                 total_imported += imp
-                total_seen += seen
+                total_dups += dups
                 total_sent += len(chunk)
+                extra = ""
+                if no_gps or bad_rows:
+                    extra = f" ({no_gps} without GPS, {bad_rows} bad rows skipped)"
                 print(f"  {_OK()} accepted in {time.monotonic() - t0:.1f}s. "
-                      f"{imp} new aircraft, {seen} already on your account.",
+                      f"{imp} new aircraft, {dups} already on your account.{extra}",
                       file=sys.stderr)
-                # If we sent aircraft but the server recorded nothing at all
-                # (nothing imported AND nothing matched as a duplicate), the
-                # upload was accepted but had no effect. That points to a
-                # server-side problem, not the local data. Surface the raw
-                # response so the cause is visible instead of a bare "0 new".
-                _counters = ("aircraft_imported", "aircraft_already_seen",
-                             "imported", "captured", "updated", "duplicates")
-                if len(chunk) > 0 and not any(data.get(k) for k in _counters):
-                    print(f"  note: server accepted the upload but recorded 0 "
-                          f"aircraft (none imported, none matched as duplicates). "
-                          f"This usually means a server-side issue, not your data. "
-                          f"Raw response:\n  {_scrub(txt[:800], api_key)}",
-                          file=sys.stderr)
                 badges = data.get("new_badges") or []
                 if badges:
                     print(f"  new badges: {badges}", file=sys.stderr)
+                # Sanity check: if every counter the server reports is zero on
+                # a non-empty upload, surface the raw response so the cause is
+                # visible instead of a silent "0 new".
+                _counters = ("imported", "captured", "updated", "duplicates",
+                             "no_gps", "bad_rows", "merged_samples")
+                if len(chunk) > 0 and not any(data.get(k) for k in _counters):
+                    print(f"  note: server accepted the upload but recorded 0 "
+                          f"across every counter. Raw response:\n  "
+                          f"{_scrub(txt[:800], api_key)}", file=sys.stderr)
         except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", "replace")[:200]
-            print(f"  {_FAIL()} rejected by wdgwars.pl (HTTP {e.code}): {_scrub(body, api_key)}",
+            err_body = e.read().decode("utf-8", "replace")[:200]
+            print(f"  {_FAIL()} rejected by wdgwars.pl (HTTP {e.code}): {_scrub(err_body, api_key)}",
                   file=sys.stderr)
             return 1
         except Exception as e:
             print(f"  upload error: {_scrub(str(e), api_key)}", file=sys.stderr)
             return 1
     print(f"{_OK()} Upload accepted by wdgwars.pl. Sent {total_sent} aircraft. "
-          f"{total_imported} added to your score, {total_seen} already on file.",
+          f"{total_imported} added to your score, {total_dups} already on file.",
           file=sys.stderr)
     return 0
 
