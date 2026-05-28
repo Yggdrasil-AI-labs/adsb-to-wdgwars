@@ -1297,14 +1297,27 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
             with urllib.request.urlopen(req, timeout=120, context=_SSL_CTX) as resp:
                 txt = resp.read().decode("utf-8", "replace")
                 data = json.loads(txt) if txt else {}
-                imp = data.get("aircraft_imported", 0)
-                seen = data.get("aircraft_already_seen", 0)
+                imp = data.get("aircraft_imported", 0) or 0
+                seen = data.get("aircraft_already_seen", 0) or 0
                 total_imported += imp
                 total_seen += seen
                 total_sent += len(chunk)
                 print(f"  {_OK()} accepted in {time.monotonic() - t0:.1f}s. "
                       f"{imp} new aircraft, {seen} already on your account.",
                       file=sys.stderr)
+                # If we sent aircraft but the server recorded nothing at all
+                # (nothing imported AND nothing matched as a duplicate), the
+                # upload was accepted but had no effect. That points to a
+                # server-side problem, not the local data. Surface the raw
+                # response so the cause is visible instead of a bare "0 new".
+                _counters = ("aircraft_imported", "aircraft_already_seen",
+                             "imported", "captured", "updated", "duplicates")
+                if len(chunk) > 0 and not any(data.get(k) for k in _counters):
+                    print(f"  note: server accepted the upload but recorded 0 "
+                          f"aircraft (none imported, none matched as duplicates). "
+                          f"This usually means a server-side issue, not your data. "
+                          f"Raw response:\n  {_scrub(txt[:800], api_key)}",
+                          file=sys.stderr)
                 badges = data.get("new_badges") or []
                 if badges:
                     print(f"  new badges: {badges}", file=sys.stderr)
