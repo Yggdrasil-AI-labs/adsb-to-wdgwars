@@ -7,7 +7,10 @@
 # against. Bumped deliberately when we upgrade gungnir; not floating on
 # main. (Switch to a normal `gungnir>=X.Y` pin once gungnir publishes to
 # PyPI.)
-gungnir @ git+https://github.com/HiroAlleyCat/gungnir@3ceac29d5e53503b9cedddee144baf4521ddc3af
+#
+# Uses GitHub's archive tarball URL (not `git+https://`) so end users
+# don't need git installed — pip fetches the .tar.gz over plain HTTPS.
+gungnir @ https://github.com/HiroAlleyCat/gungnir/archive/3ceac29d5e53503b9cedddee144baf4521ddc3af.tar.gz
 
 # Optional — only needed if your input is AVR raw Mode-S (*XXXX; format).
 # SBS-1 / dump1090 JSON / generic CSV inputs need no dependencies (stdlib only).
