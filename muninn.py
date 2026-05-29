@@ -45,7 +45,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
