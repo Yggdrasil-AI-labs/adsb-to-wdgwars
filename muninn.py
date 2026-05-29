@@ -45,8 +45,9 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.11.1"
+__version__ = "2.0.0"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
+GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
 # without plumbing the flag through every call site.
@@ -76,42 +77,55 @@ def _open_folder(p) -> bool:
         return False
 
 import argparse
-import base64
 import csv
-import hashlib
-import hmac
 import json
+import logging
 import os
-import secrets
 import sys
 import time
-import ssl
 import urllib.error
 import urllib.request
-
-# Explicit SSL context — defense in depth. urllib.request defaults to system
-# trust store and full cert verification since Python 3.4.3 (PEP 476), but
-# being explicit makes this the obvious answer in code review.
-_SSL_CTX = ssl.create_default_context()
-# create_default_context() already enables: cert verification, hostname check,
-# TLS 1.2 minimum, secure ciphers. Don't weaken any of these.
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_API_URL = "https://wdgwars.pl/api/upload/"
-ME_API_URL = "https://wdgwars.pl/api/me"
+import gungnir
+
+# Muninn is a CLI tool — configure logging so cron logs look like they
+# did in v1.x (plain-message-per-line to stderr). Library users who set
+# up their own root logger before calling into muninn override this.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
+
+# Single Client instance for the lifetime of the process. Stateless;
+# bundles per-tool identity (User-Agent, config dir) so we don't have to
+# thread it through every call site.
+_client = gungnir.Client(
+    tool="muninn",
+    version=__version__,
+    user_agent_extra=GITHUB_URL,
+)
+
+# Re-exported from gungnir so existing call-sites (notably the argparse
+# default for --api-url) keep working without change. Source of truth
+# lives in gungnir; touch it there if the server ever moves.
+DEFAULT_API_URL = gungnir.DEFAULT_API_URL
+ME_API_URL = gungnir.ME_API_URL
 
 # Persistent API key location — XDG-style on Linux/Mac, %APPDATA% on Windows.
 def _config_dir() -> Path:
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / "muninn"
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "muninn"
+    """Per-tool config dir. Delegates to gungnir so the path matches
+    every other tool in the family. For ``tool="muninn"`` this is
+    ``~/.config/muninn/`` on POSIX and ``%APPDATA%/muninn/`` on Windows
+    — byte-identical to Muninn 1.x's path."""
+    return gungnir.keys.config_dir("muninn")
 
 
 def _key_path() -> Path:
-    return _config_dir() / "api.key"
+    return gungnir.keys.key_path("muninn")
 
 
 def _folders_config_path() -> Path:
@@ -264,23 +278,12 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
 
 
 def load_key(cli_key: str | None) -> str:
-    """Resolve API key in priority order:
+    """Resolve API key in priority order (delegates to gungnir):
     1. --key CLI flag
     2. $WDGWARS_API_KEY env var
     3. ~/.config/muninn/api.key (saved via --save-key)
     """
-    if cli_key:
-        return cli_key.strip()
-    env = os.environ.get("WDGWARS_API_KEY", "").strip()
-    if env:
-        return env
-    p = _key_path()
-    if p.exists():
-        try:
-            return p.read_text().strip()
-        except Exception as e:
-            print(f"warn: could not read {p}: {e}", file=sys.stderr)
-    return ""
+    return _client.load_key(cli_key)
 
 
 def _prompt_yes_no(question: str, default: bool = True) -> bool:
@@ -370,26 +373,14 @@ def interactive_setup() -> int:
 
 def save_key(key: str) -> None:
     """Save the API key to user config. Refuses to write through a symlink
-    (anti-symlink-attack: prevents overwriting unrelated files if someone
-    points api.key at e.g. ~/.ssh/id_rsa)."""
+    and creates the file with mode 0o600 atomically (anti-symlink-attack
+    and anti-create-mode-race — both defenses live in gungnir as of
+    0.1.1)."""
+    try:
+        _client.save_key(key)
+    except gungnir.KeyFileSymlinkError as e:
+        sys.exit(f"{e}\nremove the symlink and re-run --save-key")
     p = _key_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    # Refuse to follow a symlink — would let an attacker redirect the write
-    if p.is_symlink():
-        sys.exit(f"refusing to write through symlink: {p} -> {os.readlink(p)}\n"
-                 f"remove the symlink and re-run --save-key")
-    # Write with restrictive permissions atomically: chmod the empty file BEFORE
-    # writing the secret, so it's never world-readable even briefly.
-    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, (key.strip() + "\n").encode())
-    finally:
-        os.close(fd)
-    # Belt+suspenders chmod on Unix (no-op on Windows)
-    try:
-        os.chmod(p, 0o600)
-    except Exception:
-        pass
     print(f"[muninn] saved API key to {p}", file=sys.stderr)
     print(f"[muninn] (file mode 600 — only your user can read it)", file=sys.stderr)
     print(f"[muninn] you can now run uploads without --key or env var",
@@ -398,43 +389,20 @@ def save_key(key: str) -> None:
 
 def _scrub(text: str, key: str) -> str:
     """Defensive: if the API key ever leaks into a server error message or
-    exception trace, redact it before we print to the terminal."""
-    if key and len(key) > 8 and key in text:
-        return text.replace(key, key[:4] + "…" + key[-4:])
-    return text
+    exception trace, redact it before we print to the terminal.
+
+    Delegates to gungnir.keys.scrub() which redacts on any non-empty
+    match (gungnir dropped Muninn 1.x's `len(key) > 8` threshold that
+    silently leaked short keys)."""
+    return gungnir.keys.scrub(text, key)
 
 
 def check_whoami(key: str) -> int:
-    """Hit /api/me to validate the key. Prints username + counts on success.
-    Never echoes the API key in any output, even on failure."""
-    req = urllib.request.Request(
-        ME_API_URL,
-        headers={"X-API-Key": key,
-                 "User-Agent": "muninn/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp:
-            data = json.loads(resp.read().decode())
-            if not data.get("ok"):
-                # Only show the error field, not the whole response dict
-                # (response shape is server-controlled — defensive)
-                err = data.get("error", "unknown")
-                print(f"[muninn] key rejected: {_scrub(err, key)}",
-                      file=sys.stderr)
-                return 1
-            print(f"[muninn] key OK — user={data.get('username')}",
-                  file=sys.stderr)
-            print(f"[muninn]   wifi={data.get('wifi', 0)} "
-                  f"ble={data.get('ble', 0)} aircraft={data.get('aircraft', 0)} "
-                  f"total={data.get('total', 0)}", file=sys.stderr)
-            return 0
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")[:200]
-        print(f"[muninn] HTTP {e.code}: {_scrub(body, key)}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"[muninn] whoami failed: {_scrub(str(e), key)}", file=sys.stderr)
-        return 1
+    """Hit /api/me to validate the key. Logs username + counts on success.
+    Never echoes the API key in any output, even on failure. Delegates
+    to gungnir.transport.whoami() — the prefixed log lines come from
+    there."""
+    return _client.whoami(key)
 
 
 # ── Format detection ────────────────────────────────────────────────────────
@@ -1266,73 +1234,28 @@ def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
            batch_size: int = 500, dry_run: bool = False) -> int:
-    if not records:
-        print("nothing to upload", file=sys.stderr)
-        return 0
-    total_imported = 0
-    total_seen = 0
-    total_sent = 0
-    for i in range(0, len(records), batch_size):
-        chunk = records[i:i + batch_size]
-        payload = {"networks": [], "aircraft": chunk, "meshcore_nodes": []}
-        body_json = json.dumps(payload, separators=(",", ":"))
-        data_b64 = base64.b64encode(body_json.encode()).decode()
-        nonce = secrets.token_hex(8)
-        sig = hmac.new(api_key.encode(), (nonce + data_b64).encode(),
-                       hashlib.sha256).hexdigest()
-        envelope = {"data": data_b64, "nonce": nonce, "sig": sig}
-        body = json.dumps(envelope).encode()
-        print(f"chunk {i // batch_size + 1}/{(len(records) - 1) // batch_size + 1}: "
-              f"{len(chunk)} aircraft, {len(body)} B", file=sys.stderr)
-        if dry_run:
-            print(f"  DRY-RUN, would POST to {api_url}", file=sys.stderr)
-            continue
-        req = urllib.request.Request(
-            api_url, data=body, method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "X-API-Key": api_key,
-                "User-Agent": f"muninn/{__version__}",
-                "Accept": "application/json",
-            },
-        )
-        try:
-            t0 = time.monotonic()
-            with urllib.request.urlopen(req, timeout=120, context=_SSL_CTX) as resp:
-                txt = resp.read().decode("utf-8", "replace")
-                data = json.loads(txt) if txt else {}
-                imp = int(data.get("aircraft_imported", 0) or 0)
-                seen = int(data.get("aircraft_already_seen", 0) or 0)
-                total_imported += imp
-                total_seen += seen
-                total_sent += len(chunk)
-                print(f"  {_OK()} accepted in {time.monotonic() - t0:.1f}s. "
-                      f"{imp} new aircraft, {seen} already on your account.",
-                      file=sys.stderr)
-                badges = data.get("new_badges") or []
-                if badges:
-                    print(f"  new badges: {badges}", file=sys.stderr)
-                # Sanity check: if every counter the server reports is zero on
-                # a non-empty upload, surface the raw response so the cause is
-                # visible instead of a silent "0 new".
-                _counters = ("aircraft_imported", "aircraft_already_seen",
-                             "imported", "captured", "updated", "duplicates")
-                if len(chunk) > 0 and not any(data.get(k) for k in _counters):
-                    print(f"  note: server accepted the upload but recorded 0 "
-                          f"across every counter. Raw response:\n  "
-                          f"{_scrub(txt[:800], api_key)}", file=sys.stderr)
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", "replace")[:200]
-            print(f"  {_FAIL()} rejected by wdgwars.pl (HTTP {e.code}): {_scrub(err_body, api_key)}",
-                  file=sys.stderr)
-            return 1
-        except Exception as e:
-            print(f"  upload error: {_scrub(str(e), api_key)}", file=sys.stderr)
-            return 1
-    print(f"{_OK()} Upload accepted by wdgwars.pl. Sent {total_sent} aircraft. "
-          f"{total_imported} added to your score, {total_seen} already on file.",
-          file=sys.stderr)
-    return 0
+    """POST ``records`` to the wdgwars.pl signed-JSON endpoint.
+
+    Behavior comes from gungnir as of v2.0:
+
+    - Retries 5xx and network errors with exponential backoff (3 attempts).
+    - 429 stops the whole batch and persists a cooldown that the next
+      cron tick respects (vs v1.x which kept trying chunks).
+    - The silent-drop check (HTTP 200 ok:true with every counter zero)
+      now returns rc=1 instead of just warning (vs v1.x which returned 0).
+    - Inter-chunk cooldown of 1s between chunks (vs v1.x which was
+      back-to-back).
+
+    Wire shape (HMAC envelope) is byte-identical to v1.11.1 — verified
+    by ``gungnir/tests/test_muninn_parity.py``.
+    """
+    return gungnir.transport.send(
+        "muninn", __version__, api_url, api_key,
+        aircraft=records,
+        batch_size=batch_size,
+        dry_run=dry_run,
+        user_agent_extra=GITHUB_URL,
+    )
 
 
 # ── Watch mode ──────────────────────────────────────────────────────────────
@@ -1566,7 +1489,7 @@ def _check_for_update() -> str | None:
         req = urllib.request.Request(
             f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
             headers={"User-Agent": f"muninn/{__version__}"})
-        with urllib.request.urlopen(req, timeout=3, context=_SSL_CTX) as r:
+        with urllib.request.urlopen(req, timeout=3, context=gungnir.transport.SSL_CTX) as r:
             data = json.loads(r.read())
             latest = (data.get("tag_name") or "").lstrip("v")
     except Exception:
@@ -1615,7 +1538,7 @@ def _update_from_raw(script_dir: Path) -> int:
     try:
         req = urllib.request.Request(raw_url, headers={
             "User-Agent": f"muninn/{__version__}"})
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as r:
+        with urllib.request.urlopen(req, timeout=15, context=gungnir.transport.SSL_CTX) as r:
             new_text = r.read().decode("utf-8")
     except Exception as e:
         print(f"[muninn] download failed: {e}", file=sys.stderr)
