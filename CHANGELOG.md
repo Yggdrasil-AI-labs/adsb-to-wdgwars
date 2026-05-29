@@ -4,6 +4,27 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.3] - 2026-05-29 - Standardize gungnir pin across the family
+
+Muninn was pinned to gungnir commit `3ceac29d` (gungnir 0.1.0), while
+[wigle-to-wdgwars 1.1.1](https://github.com/HiroAlleyCat/wigle-to-wdgwars)
+pinned `v0.1.1`. Anyone running both tools from the same Python (no
+venv) saw the pins fight on every install — one would downgrade or
+upgrade the other.
+
+gungnir 0.1.0 → 0.1.1 contains zero code changes (CHANGELOG docs +
+version-string bumps in `__version__.py` and `pyproject.toml`), so
+this is a safe drop-in for muninn.
+
+### Changed
+
+- `requirements.txt` gungnir pin moved from
+  `archive/3ceac29d5e53503b9cedddee144baf4521ddc3af.tar.gz`
+  (= gungnir 0.1.0) to
+  `archive/refs/tags/v0.1.1.tar.gz`. Family-wide consistency:
+  Muninn, wigle-to-wdgwars, and the future Heimdall gungnir
+  migration all sit on the same version going forward.
+
 ## [2.0.2] - 2026-05-29 - Fix install/update path for ZIP downloaders
 
 The v2.0.0 refactor that extracted the HMAC transport into the
