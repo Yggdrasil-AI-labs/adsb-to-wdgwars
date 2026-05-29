@@ -4,6 +4,66 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.2] - 2026-05-29 - Fix install/update path for ZIP downloaders
+
+The v2.0.0 refactor that extracted the HMAC transport into the
+[gungnir](https://github.com/HiroAlleyCat/gungnir) library introduced
+two install/update bugs for ZIP-downloaded installs (i.e. users
+without a git checkout). This release fixes both and adds
+defensive Python-version checks to the wrapper scripts.
+
+### Fixed
+
+- **`muninn.py --update` no longer leaves users with a broken install
+  on dep-bumping releases.** The previous `--update` was one-file-only
+  — it refreshed `muninn.py` but not `requirements.txt`. A user on
+  v1.x running `--update` would land on a v2.x `muninn.py` that
+  hard-imports `gungnir`, while their local `requirements.txt` still
+  reflected v1.x's stdlib-only dependency footprint. The next
+  invocation would `ImportError: No module named 'gungnir'`. The
+  updater now also fetches `requirements.txt` and runs
+  `python -m pip install --upgrade -r requirements.txt` against
+  `sys.executable` so the live interpreter picks up new deps.
+
+- **`requirements.txt` no longer requires `git` on the user's PATH.**
+  The gungnir pin was `gungnir @ git+https://github.com/...@<sha>`,
+  which forced pip to shell out to `git clone`. ZIP downloaders rarely
+  have git installed (that's why they ZIP-downloaded). The pin now
+  uses GitHub's archive tarball URL
+  (`https://github.com/.../archive/<sha>.tar.gz`), so pip fetches it
+  over plain HTTPS with stdlib `urllib`. Same commit, same bytes, same
+  reproducibility, no external git binary.
+
+- **`update.bat` / `update.sh` / `setup.bat` / `setup.sh` are now
+  cold-start-safe.** The wrappers now (1) re-fetch `requirements.txt`
+  from `main`, (2) `pip install --upgrade -r requirements.txt`, (3)
+  invoke `muninn.py`. The previous order ran muninn first, which
+  fails to load when a new dep has been added since the local install.
+  Running pip *before* importing anything is the only ordering that
+  recovers from the "new code, old deps" state.
+
+### Added
+
+- **Python-version guard in all four wrapper scripts.** They check for
+  Python ≥ 3.10 (gungnir's requirement) and print a clear "install
+  Python 3.10+ from python.org" message before attempting anything if
+  the check fails. Previously a 3.9 user got an opaque pip-resolution
+  error.
+
+- `_fetch_raw(path, dest)` and `_pip_install_requirements(script_dir)`
+  helpers in `muninn.py` — used by `--update` to refresh sibling files
+  atomically and invoke pip against the currently-running interpreter.
+
+### Documentation
+
+- README's CLI install section now documents the ZIP-download path
+  (Option A) alongside `git clone` (Option B), and explicitly states
+  that git is not required.
+
+- README's "Updating" section explains the three-step
+  refresh-deps-then-update flow and why the order matters when a
+  release bumps dependencies.
+
 ## [2.0.1] - 2026-05-29 - Fix update-checker false positive
 
 ### Fixed

@@ -3,6 +3,15 @@ REM Double-click this once to install dependencies and save your WDGoWars API ke
 REM We refresh requirements.txt from GitHub first in case the local copy
 REM in this ZIP is stale relative to muninn.py's current dep list.
 
+python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>nul
+if errorlevel 1 (
+    echo Muninn requires Python 3.10 or newer. Your current Python is:
+    python --version 2>nul || echo   ^(not found on PATH^)
+    echo.
+    echo Install Python 3.10+ from https://python.org/downloads/ and re-run.
+    goto :done
+)
+
 echo [1/3] Refreshing requirements.txt from GitHub...
 python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/adsb-to-wdgwars/main/requirements.txt', r'%~dp0requirements.txt')"
 if errorlevel 1 (
@@ -18,8 +27,9 @@ python -m pip install --upgrade -r "%~dp0requirements.txt"
 if errorlevel 1 (
     echo.
     echo pip install failed. See messages above. Common fixes:
-    echo   - install git ^(needed for git+https deps^)
+    echo   - upgrade Python to 3.10 or newer ^(check with: python --version^)
     echo   - run as administrator if pip needs elevated perms
+    echo   - check that your firewall allows HTTPS to github.com
     goto :done
 )
 

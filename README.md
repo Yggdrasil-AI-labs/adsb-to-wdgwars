@@ -94,9 +94,23 @@ If `rtl_test` finds the dongle but no aircraft show up after 5 minutes, the ante
 
 ## CLI install
 
+You need **Python 3.10 or newer** and a working `pip`. Git is **not**
+required — Muninn's installer fetches its one dependency
+([gungnir](https://github.com/HiroAlleyCat/gungnir), the shared HMAC
+transport) over plain HTTPS.
+
+### Option A — ZIP download (no git needed)
+
+1. Grab the ZIP from [the GitHub repo](https://github.com/HiroAlleyCat/adsb-to-wdgwars) (Code → Download ZIP) and unzip it.
+2. Double-click **`setup.bat`** (Windows) or run **`./setup.sh`** (Mac/Linux). It installs dependencies and prompts for your API key.
+3. After that, double-click **`run.bat`** / **`run.sh`** to process anything in `input/`.
+
+### Option B — clone with git
+
 ```bash
 git clone https://github.com/HiroAlleyCat/adsb-to-wdgwars
 cd adsb-to-wdgwars
+python3 -m pip install -r requirements.txt
 python3 muninn.py
 ```
 
@@ -224,13 +238,21 @@ No records are removed — these are warnings only. If you are deliberately aggr
 
 ## Updating
 
+Double-click **`update.bat`** (Windows) or run **`./update.sh`** (Mac/Linux) from the Muninn folder. The script:
+
+1. Pulls the latest `requirements.txt` from GitHub so any new dependencies are visible to pip.
+2. Runs `pip install --upgrade -r requirements.txt`.
+3. Updates `muninn.py` itself (via `git pull` if you cloned the repo, otherwise via a direct HTTPS download from GitHub).
+
+This order matters across versions that add or bump a dependency — pip has to know about the new dep before muninn.py tries to import it.
+
+If you prefer the CLI:
+
 ```bash
 python3 muninn.py --update
 ```
 
-Don’t want to type? Double-click `update.bat` (Windows) or `update.sh` (Mac/Linux) from the Muninn folder. Same result, no terminal.
-
-`--update` runs `git pull` if you cloned the repo, or downloads the latest `muninn.py` from GitHub if you grabbed the ZIP. Either install path works.
+`muninn.py --update` also refreshes `requirements.txt` and re-runs pip itself, so direct CLI updates self-heal too — but only if `muninn.py` can already load (i.e. its current deps are installed). The wrapper script is the more robust path because it bootstraps deps before importing anything.
 
 Muninn also does a once-a-day background check against the GitHub releases API and prints a one-liner on launch if a newer version is out. No telemetry, single HEAD request, cached locally for 24h. See [CHANGELOG.md](CHANGELOG.md) for per-release notes.
 
