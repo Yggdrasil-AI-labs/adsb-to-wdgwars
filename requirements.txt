@@ -1,3 +1,14 @@
+# Required: shared transport client for wdgwars.pl (HMAC envelope, retry,
+# cooldown, silent-drop detection). Lives at:
+#     https://github.com/HiroAlleyCat/gungnir
+#
+# Until gungnir publishes to PyPI, install editable from a sibling checkout:
+#     git clone https://github.com/HiroAlleyCat/gungnir ../gungnir
+#     pip install -e ../gungnir
+#
+# Once on PyPI, the next line activates as a normal pinned dep:
+gungnir>=0.1.0
+
 # Optional — only needed if your input is AVR raw Mode-S (*XXXX; format).
 # SBS-1 / dump1090 JSON / generic CSV inputs need no dependencies (stdlib only).
 pyModeS>=2.18

@@ -4,6 +4,68 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-05-28 - Extract transport to gungnir
+
+Structural refactor. **No wire-protocol change** — the HMAC envelope
+sent to wdgwars.pl is byte-identical to v1.11.1 (verified by
+`gungnir/tests/test_muninn_parity.py`). Existing cron jobs continue to
+work without any change to their invocation. Existing API keys at
+`~/.config/muninn/api.key` and `%APPDATA%/muninn/api.key` are read in
+place — config path is unchanged.
+
+### Changed
+
+- **Transport, HMAC envelope, key management, cooldown persistence,
+  silent-drop detection, and User-Agent are now provided by
+  [gungnir](https://github.com/HiroAlleyCat/gungnir) ≥ 0.1.1.** Muninn
+  becomes a thin ADS-B-specific layer (input parsing + record
+  normalization) over the shared library. Same library will back
+  Heimdall and wigle-to-wdgwars in subsequent releases so bug fixes
+  land once.
+
+### Improved (free wins from gungnir, no muninn-side code)
+
+- **Retries on 5xx and network errors** with exponential backoff
+  (3 attempts, 2s/4s gaps). v1.x failed the upload on the first
+  transient hiccup.
+- **429 rate-limit response now stops the whole batch** and persists
+  a cooldown deadline. The next cron tick respects the deadline so
+  multiple cron jobs don't drown the server. v1.x kept POSTing more
+  chunks after a 429.
+- **Silent-drop pattern now exits non-zero.** v1.11.1 added the
+  HTTP-200-ok-true-zero-counters detector but only logged a warning;
+  v2.0 also returns exit code 1 so cron jobs surface the failure.
+- **Inter-chunk cooldown of 1s between chunks.** v1.x sent chunks
+  back-to-back, which can drown a server under a 30-chunk batch.
+  Configurable via the gungnir Client; this default is safe for the
+  wdgwars.pl prod server.
+- **User-Agent now includes the repo URL.** Server admins can trace
+  Muninn traffic to its source via the standard
+  `muninn/2.0.0 (+https://github.com/HiroAlleyCat/adsb-to-wdgwars)`
+  bot-UA convention. v1.x was bare `muninn/1.11.1`.
+- **API key redaction works for short keys too.** v1.x scrub()
+  required `len(key) > 8` before redacting, which leaked short test
+  keys into log output. gungnir redacts on any non-empty match.
+- **Library-level logging via the standard `logging` module.**
+  Muninn still defaults to its v1.x stderr-line-per-event behavior;
+  users who set up their own root logger override it.
+
+### Removed
+
+- The local copies of `_SSL_CTX`, `DEFAULT_API_URL`, `ME_API_URL`,
+  `_config_dir`, `_key_path`, the HMAC envelope build, and the
+  `urllib`-based upload loop. All moved to gungnir. The Muninn-side
+  function signatures (`upload`, `load_key`, `save_key`,
+  `check_whoami`, `_scrub`) are preserved as thin shims so any
+  external script that imported them from muninn continues to work.
+
+### Migration
+
+- Install gungnir before upgrading:
+  `pip install -e ../gungnir` (until gungnir is on PyPI).
+- No config-file changes needed.
+- No cron-stanza changes needed.
+
 ## [1.11.1] - 2026-05-28 - Stay on HMAC `/api/upload/`, fix leading-zero ICAOs
 
 ### Fixed
