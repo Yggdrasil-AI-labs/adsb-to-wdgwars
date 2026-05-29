@@ -1537,7 +1537,10 @@ def _check_for_update() -> str | None:
 
 def _run_update() -> int:
     """Try to update muninn in place. Uses `git pull` if we're in a git
-    checkout; otherwise prints the manual update instructions."""
+    checkout; otherwise downloads muninn.py + requirements.txt from raw
+    GitHub. Either path then `pip install`s requirements.txt so a release
+    that bumps deps (e.g. a new gungnir pin) doesn't leave the user with
+    an updated muninn.py importing a module they don't have."""
     import subprocess
     script_dir = Path(__file__).resolve().parent
     git_dir = script_dir / ".git"
@@ -1550,6 +1553,7 @@ def _run_update() -> int:
             if r.returncode != 0:
                 print(r.stderr.strip(), file=sys.stderr)
                 return r.returncode
+            _pip_install_requirements(script_dir)
             print(f"[muninn] now on muninn v{__version__} (re-run with --version "
                   f"to confirm latest)", file=sys.stderr)
             return 0
@@ -1561,9 +1565,70 @@ def _run_update() -> int:
         return _update_from_raw(script_dir)
 
 
+def _fetch_raw(path: str, dest: Path) -> bool:
+    """Fetch a file from the repo's main branch to dest atomically.
+    Returns True on success, False on failure (logs the reason)."""
+    raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{path}"
+    print(f"[muninn] fetching {path} from {raw_url}", file=sys.stderr)
+    try:
+        req = urllib.request.Request(raw_url, headers={
+            "User-Agent": f"muninn/{__version__}"})
+        with urllib.request.urlopen(req, timeout=15, context=gungnir.transport.SSL_CTX) as r:
+            body = r.read()
+    except Exception as e:
+        print(f"[muninn] download of {path} failed: {e}", file=sys.stderr)
+        return False
+    tmp = dest.with_suffix(dest.suffix + ".new")
+    try:
+        tmp.write_bytes(body)
+        os.replace(tmp, dest)
+    except OSError as e:
+        print(f"[muninn] couldn't write {dest}: {e}", file=sys.stderr)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def _pip_install_requirements(script_dir: Path) -> None:
+    """Best-effort `python -m pip install -r requirements.txt` against the
+    interpreter currently running muninn. Never fails the caller — prints
+    a clear hint if pip is missing or the install errors out, so the
+    update return code still reflects the muninn.py update itself."""
+    import subprocess
+    req = script_dir / "requirements.txt"
+    if not req.exists():
+        print(f"[muninn] no requirements.txt at {req}, skipping deps install",
+              file=sys.stderr)
+        return
+    print(f"[muninn] installing/refreshing deps from {req.name} "
+          f"(python -m pip install --upgrade -r requirements.txt)", file=sys.stderr)
+    try:
+        r = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade",
+                            "-r", str(req)], timeout=300)
+    except FileNotFoundError:
+        print("[muninn] python not found to invoke pip; run "
+              "`python -m pip install -r requirements.txt` manually.",
+              file=sys.stderr)
+        return
+    except subprocess.TimeoutExpired:
+        print("[muninn] pip install timed out; run "
+              "`python -m pip install -r requirements.txt` manually.",
+              file=sys.stderr)
+        return
+    if r.returncode != 0:
+        print(f"[muninn] pip install exited {r.returncode}; if the import "
+              f"errors below mention a missing module, run "
+              f"`python -m pip install -r requirements.txt` manually.",
+              file=sys.stderr)
+
+
 def _update_from_raw(script_dir: Path) -> int:
-    """Non-git fallback for --update: fetch muninn.py from raw GitHub and
-    replace the local file atomically. Works for ZIP-downloaded installs."""
+    """Non-git fallback for --update: fetch muninn.py + requirements.txt
+    from raw GitHub and replace the local files atomically, then refresh
+    deps. Works for ZIP-downloaded installs."""
     target = script_dir / "muninn.py"
     raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/muninn.py"
     print(f"[muninn] not a git checkout. Fetching latest muninn.py from "
@@ -1590,8 +1655,10 @@ def _update_from_raw(script_dir: Path) -> int:
                    new_text, _re.MULTILINE)
     new_version = m.group(1) if m else "?"
     if new_version == __version__:
-        print(f"[muninn] already on the latest (v{__version__}). Nothing to do.",
-              file=sys.stderr)
+        print(f"[muninn] already on the latest (v{__version__}). Refreshing "
+              f"requirements.txt in case a pinned dep moved.", file=sys.stderr)
+        _fetch_raw("requirements.txt", script_dir / "requirements.txt")
+        _pip_install_requirements(script_dir)
         return 0
     tmp = target.with_suffix(".py.new")
     try:
@@ -1605,6 +1672,8 @@ def _update_from_raw(script_dir: Path) -> int:
             pass
         return 1
     print(f"[muninn] updated v{__version__} to v{new_version}", file=sys.stderr)
+    _fetch_raw("requirements.txt", script_dir / "requirements.txt")
+    _pip_install_requirements(script_dir)
     print(f"[muninn] re-run muninn to pick up the new code "
           f"(the current process is still running the old version).",
           file=sys.stderr)
