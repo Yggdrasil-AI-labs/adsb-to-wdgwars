@@ -29,3 +29,4 @@ api.key
 # Keep example files (whitelisted after the *.json deny)
 *.json
 !examples/*.json
+!web/gungnir/*.json

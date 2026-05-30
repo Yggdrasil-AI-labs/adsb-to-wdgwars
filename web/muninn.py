@@ -27,8 +27,8 @@ Output is a JSON array of:
    "type": "ADSB"}
 
 If --upload is given, the array is wrapped in the documented HMAC-SHA256
-envelope and POSTed to https://wdgwars.pl/api/upload/ (the **trailing slash
-is required** — without it the server rejects every payload as a replay).
+envelope and POSTed to https://wdgwars.pl/api/upload/ (the trailing slash
+is required, without it the server rejects every payload as a replay).
 
 Examples
 --------
@@ -45,8 +45,9 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "1.8.1"
+__version__ = "2.0.3"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
+GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
 # without plumbing the flag through every call site.
@@ -76,42 +77,55 @@ def _open_folder(p) -> bool:
         return False
 
 import argparse
-import base64
 import csv
-import hashlib
-import hmac
 import json
+import logging
 import os
-import secrets
 import sys
 import time
-import ssl
 import urllib.error
 import urllib.request
-
-# Explicit SSL context — defense in depth. urllib.request defaults to system
-# trust store and full cert verification since Python 3.4.3 (PEP 476), but
-# being explicit makes this the obvious answer in code review.
-_SSL_CTX = ssl.create_default_context()
-# create_default_context() already enables: cert verification, hostname check,
-# TLS 1.2 minimum, secure ciphers. Don't weaken any of these.
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_API_URL = "https://wdgwars.pl/api/upload/"
-ME_API_URL = "https://wdgwars.pl/api/me"
+import gungnir
+
+# Muninn is a CLI tool — configure logging so cron logs look like they
+# did in v1.x (plain-message-per-line to stderr). Library users who set
+# up their own root logger before calling into muninn override this.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
+
+# Single Client instance for the lifetime of the process. Stateless;
+# bundles per-tool identity (User-Agent, config dir) so we don't have to
+# thread it through every call site.
+_client = gungnir.Client(
+    tool="muninn",
+    version=__version__,
+    user_agent_extra=GITHUB_URL,
+)
+
+# Re-exported from gungnir so existing call-sites (notably the argparse
+# default for --api-url) keep working without change. Source of truth
+# lives in gungnir; touch it there if the server ever moves.
+DEFAULT_API_URL = gungnir.DEFAULT_API_URL
+ME_API_URL = gungnir.ME_API_URL
 
 # Persistent API key location — XDG-style on Linux/Mac, %APPDATA% on Windows.
 def _config_dir() -> Path:
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / "muninn"
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "muninn"
+    """Per-tool config dir. Delegates to gungnir so the path matches
+    every other tool in the family. For ``tool="muninn"`` this is
+    ``~/.config/muninn/`` on POSIX and ``%APPDATA%/muninn/`` on Windows
+    — byte-identical to Muninn 1.x's path."""
+    return gungnir.keys.config_dir("muninn")
 
 
 def _key_path() -> Path:
-    return _config_dir() / "api.key"
+    return gungnir.keys.key_path("muninn")
 
 
 def _folders_config_path() -> Path:
@@ -264,23 +278,12 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
 
 
 def load_key(cli_key: str | None) -> str:
-    """Resolve API key in priority order:
+    """Resolve API key in priority order (delegates to gungnir):
     1. --key CLI flag
     2. $WDGWARS_API_KEY env var
     3. ~/.config/muninn/api.key (saved via --save-key)
     """
-    if cli_key:
-        return cli_key.strip()
-    env = os.environ.get("WDGWARS_API_KEY", "").strip()
-    if env:
-        return env
-    p = _key_path()
-    if p.exists():
-        try:
-            return p.read_text().strip()
-        except Exception as e:
-            print(f"warn: could not read {p}: {e}", file=sys.stderr)
-    return ""
+    return _client.load_key(cli_key)
 
 
 def _prompt_yes_no(question: str, default: bool = True) -> bool:
@@ -370,26 +373,14 @@ def interactive_setup() -> int:
 
 def save_key(key: str) -> None:
     """Save the API key to user config. Refuses to write through a symlink
-    (anti-symlink-attack: prevents overwriting unrelated files if someone
-    points api.key at e.g. ~/.ssh/id_rsa)."""
+    and creates the file with mode 0o600 atomically (anti-symlink-attack
+    and anti-create-mode-race — both defenses live in gungnir as of
+    0.1.1)."""
+    try:
+        _client.save_key(key)
+    except gungnir.KeyFileSymlinkError as e:
+        sys.exit(f"{e}\nremove the symlink and re-run --save-key")
     p = _key_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    # Refuse to follow a symlink — would let an attacker redirect the write
-    if p.is_symlink():
-        sys.exit(f"refusing to write through symlink: {p} -> {os.readlink(p)}\n"
-                 f"remove the symlink and re-run --save-key")
-    # Write with restrictive permissions atomically: chmod the empty file BEFORE
-    # writing the secret, so it's never world-readable even briefly.
-    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, (key.strip() + "\n").encode())
-    finally:
-        os.close(fd)
-    # Belt+suspenders chmod on Unix (no-op on Windows)
-    try:
-        os.chmod(p, 0o600)
-    except Exception:
-        pass
     print(f"[muninn] saved API key to {p}", file=sys.stderr)
     print(f"[muninn] (file mode 600 — only your user can read it)", file=sys.stderr)
     print(f"[muninn] you can now run uploads without --key or env var",
@@ -398,43 +389,20 @@ def save_key(key: str) -> None:
 
 def _scrub(text: str, key: str) -> str:
     """Defensive: if the API key ever leaks into a server error message or
-    exception trace, redact it before we print to the terminal."""
-    if key and len(key) > 8 and key in text:
-        return text.replace(key, key[:4] + "…" + key[-4:])
-    return text
+    exception trace, redact it before we print to the terminal.
+
+    Delegates to gungnir.keys.scrub() which redacts on any non-empty
+    match (gungnir dropped Muninn 1.x's `len(key) > 8` threshold that
+    silently leaked short keys)."""
+    return gungnir.keys.scrub(text, key)
 
 
 def check_whoami(key: str) -> int:
-    """Hit /api/me to validate the key. Prints username + counts on success.
-    Never echoes the API key in any output, even on failure."""
-    req = urllib.request.Request(
-        ME_API_URL,
-        headers={"X-API-Key": key,
-                 "User-Agent": "muninn/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp:
-            data = json.loads(resp.read().decode())
-            if not data.get("ok"):
-                # Only show the error field, not the whole response dict
-                # (response shape is server-controlled — defensive)
-                err = data.get("error", "unknown")
-                print(f"[muninn] key rejected: {_scrub(err, key)}",
-                      file=sys.stderr)
-                return 1
-            print(f"[muninn] key OK — user={data.get('username')}",
-                  file=sys.stderr)
-            print(f"[muninn]   wifi={data.get('wifi', 0)} "
-                  f"ble={data.get('ble', 0)} aircraft={data.get('aircraft', 0)} "
-                  f"total={data.get('total', 0)}", file=sys.stderr)
-            return 0
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")[:200]
-        print(f"[muninn] HTTP {e.code}: {_scrub(body, key)}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"[muninn] whoami failed: {_scrub(str(e), key)}", file=sys.stderr)
-        return 1
+    """Hit /api/me to validate the key. Logs username + counts on success.
+    Never echoes the API key in any output, even on failure. Delegates
+    to gungnir.transport.whoami() — the prefixed log lines come from
+    there."""
+    return _client.whoami(key)
 
 
 # ── Format detection ────────────────────────────────────────────────────────
@@ -544,6 +512,17 @@ def _to_dump1090_fa(records: list[dict]) -> dict:
     }
 
 
+def _coerce_int(v) -> int:
+    """dump1090/readsb encode on-ground aircraft as alt_baro="ground". Treat
+    that and any other non-numeric value as 0 instead of crashing."""
+    if v is None:
+        return 0
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _norm_record(icao: str, *, callsign: str = "", lat: float | None = None,
                  lon: float | None = None, alt_ft: int = 0, speed_kt: int = 0,
                  heading: int = 0, first_seen: str | None = None) -> dict | None:
@@ -553,9 +532,13 @@ def _norm_record(icao: str, *, callsign: str = "", lat: float | None = None,
         return None
     if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
         return None
-    icao = (icao or "").upper().lstrip("0") or "000000"
+    # ICAO is a 24-bit Mode-S address: always exactly 6 hex chars. Do NOT
+    # strip leading zeros — the server validates ^[0-9A-F]{6}$ and a stripped
+    # ICAO ("0DB36A" -> "DB36A") is silently dropped on import. Empty input
+    # falls back to "000000" so the caller can still emit a record.
+    icao = (icao or "").upper().strip() or "000000"
     return {
-        "icao": icao.upper(),
+        "icao": icao,
         "callsign": (callsign or "").strip(),
         "lat": round(float(lat), 6),
         "lon": round(float(lon), 6),
@@ -617,8 +600,8 @@ def _warn_range(records: list[dict]) -> None:
         d = _haversine_km(clat, clon, r["lat"], r["lon"])
         label = r["callsign"] or "(no callsign)"
         print(
-            f"[muninn]   outlier: {r["icao"]} {label} "
-            f"@ {r["lat"]:.4f},{r["lon"]:.4f} — {d:.0f} km from centroid",
+            f"[muninn]   outlier: {r['icao']} {label} "
+            f"@ {r['lat']:.4f},{r['lon']:.4f} — {d:.0f} km from centroid",
             file=_sys.stderr,
         )
     if len(outliers) > 3:
@@ -825,12 +808,12 @@ def parse_json(path: Path) -> dict[str, dict]:
                       or ac.get("Call") or ac.get("Tail")
                       or ac.get("Reg") or "").strip(),
             lat=lat, lon=lon,
-            alt_ft=int(ac.get("alt_baro") or ac.get("altitude")
-                       or ac.get("alt") or ac.get("Alt") or 0),
-            speed_kt=int(float(ac.get("gs") or ac.get("speed")
-                               or ac.get("Spd") or ac.get("Speed") or 0)),
-            heading=int(float(ac.get("track") or ac.get("heading")
-                              or ac.get("Trak") or ac.get("Track") or 0)),
+            alt_ft=_coerce_int(ac.get("alt_baro") or ac.get("altitude")
+                               or ac.get("alt") or ac.get("Alt") or 0),
+            speed_kt=_coerce_int(ac.get("gs") or ac.get("speed")
+                                 or ac.get("Spd") or ac.get("Speed") or 0),
+            heading=_coerce_int(ac.get("track") or ac.get("heading")
+                                or ac.get("Trak") or ac.get("Track") or 0),
             first_seen=ts_str,
         )
         if rec:
@@ -1228,9 +1211,9 @@ def _ingest_csv_row(r: list[str], fields: list[str], rows: dict[str, dict]):
         icao=icao,
         callsign=d.get("callsign", ""),
         lat=lat, lon=lon,
-        alt_ft=int(float(d.get("alt_ft") or d.get("alt") or d.get("altitude") or 0)),
-        speed_kt=int(float(d.get("speed_kt") or d.get("speed") or d.get("gs") or 0)),
-        heading=int(float(d.get("heading") or d.get("track") or d.get("cog") or 0)),
+        alt_ft=_coerce_int(d.get("alt_ft") or d.get("alt") or d.get("altitude") or 0),
+        speed_kt=_coerce_int(d.get("speed_kt") or d.get("speed") or d.get("gs") or 0),
+        heading=_coerce_int(d.get("heading") or d.get("track") or d.get("cog") or 0),
         first_seen=d.get("first_seen") or d.get("timestamp"),
     )
     if rec:
@@ -1238,63 +1221,41 @@ def _ingest_csv_row(r: list[str], fields: list[str], rows: dict[str, dict]):
 
 
 # ── WDGoWars uploader ───────────────────────────────────────────────────────
+_USE_COLOR = sys.stderr.isatty() and os.environ.get("NO_COLOR") is None
+
+def _tag(label: str, code: str) -> str:
+    if _USE_COLOR:
+        return f"[{code}m{label}[0m"
+    return label
+
+def _OK() -> str:    return _tag("[OK]", "1;32")     # bold green
+def _FAIL() -> str:  return _tag("[FAIL]", "1;31")   # bold red
+def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
+
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
-           batch_size: int = 1000, dry_run: bool = False) -> int:
-    if not records:
-        print("nothing to upload", file=sys.stderr)
-        return 0
-    total_imported = 0
-    total_seen = 0
-    total_sent = 0
-    for i in range(0, len(records), batch_size):
-        chunk = records[i:i + batch_size]
-        payload = {"networks": [], "aircraft": chunk, "meshcore_nodes": []}
-        body_json = json.dumps(payload, separators=(",", ":"))
-        data_b64 = base64.b64encode(body_json.encode()).decode()
-        nonce = secrets.token_hex(8)
-        sig = hmac.new(api_key.encode(), (nonce + data_b64).encode(),
-                       hashlib.sha256).hexdigest()
-        envelope = {"data": data_b64, "nonce": nonce, "sig": sig}
-        body = json.dumps(envelope).encode()
-        print(f"chunk {i // batch_size + 1}/{(len(records) - 1) // batch_size + 1}: "
-              f"{len(chunk)} aircraft, {len(body)} B", file=sys.stderr)
-        if dry_run:
-            print(f"  DRY-RUN — would POST to {api_url}", file=sys.stderr)
-            continue
-        req = urllib.request.Request(
-            api_url, data=body, method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "X-API-Key": api_key,
-                "User-Agent": "muninn/1.0",
-                "Accept": "application/json",
-            },
-        )
-        try:
-            t0 = time.monotonic()
-            with urllib.request.urlopen(req, timeout=120, context=_SSL_CTX) as resp:
-                txt = resp.read().decode("utf-8", "replace")
-                data = json.loads(txt) if txt else {}
-                imp = data.get("aircraft_imported", 0)
-                seen = data.get("aircraft_already_seen", 0)
-                total_imported += imp
-                total_seen += seen
-                total_sent += len(chunk)
-                print(f"  HTTP {resp.status} in {time.monotonic() - t0:.1f}s "
-                      f"imported={imp} already_seen={seen}", file=sys.stderr)
-                badges = data.get("new_badges") or []
-                if badges:
-                    print(f"  new badges: {badges}", file=sys.stderr)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", "replace")[:200]
-            print(f"  HTTP {e.code}: {_scrub(body, api_key)}", file=sys.stderr)
-            return 1
-        except Exception as e:
-            print(f"  upload error: {_scrub(str(e), api_key)}", file=sys.stderr)
-            return 1
-    print(f"DONE — aircraft_sent={total_sent} imported={total_imported} "
-          f"already_seen={total_seen}", file=sys.stderr)
-    return 0
+           batch_size: int = 500, dry_run: bool = False) -> int:
+    """POST ``records`` to the wdgwars.pl signed-JSON endpoint.
+
+    Behavior comes from gungnir as of v2.0:
+
+    - Retries 5xx and network errors with exponential backoff (3 attempts).
+    - 429 stops the whole batch and persists a cooldown that the next
+      cron tick respects (vs v1.x which kept trying chunks).
+    - The silent-drop check (HTTP 200 ok:true with every counter zero)
+      now returns rc=1 instead of just warning (vs v1.x which returned 0).
+    - Inter-chunk cooldown of 1s between chunks (vs v1.x which was
+      back-to-back).
+
+    Wire shape (HMAC envelope) is byte-identical to v1.11.1 — verified
+    by ``gungnir/tests/test_muninn_parity.py``.
+    """
+    return gungnir.transport.send(
+        "muninn", __version__, api_url, api_key,
+        aircraft=records,
+        batch_size=batch_size,
+        dry_run=dry_run,
+        user_agent_extra=GITHUB_URL,
+    )
 
 
 # ── Watch mode ──────────────────────────────────────────────────────────────
@@ -1511,24 +1472,55 @@ def _check_dump1090_net() -> None:
     print('[muninn]   Fix: restart dump1090 with --net-bi-port 0 --net-ri-port 0 to block input while keeping output.', file=sys.stderr)
 
 
+def _version_tuple(v: str) -> tuple[int, ...]:
+    """Parse a dotted semver-ish string into a tuple of ints.
+
+    Tolerates leading "v", trailing pre-release / build metadata
+    ("2.0.0-rc1" → (2, 0, 0)), and missing trailing components
+    ("2" → (2,)). Anything unparseable returns an empty tuple so the
+    caller can decide what to do (we treat that as "skip the check").
+    """
+    s = (v or "").lstrip("v").strip()
+    # Strip pre-release / build suffix before parsing
+    for sep in ("-", "+", " "):
+        if sep in s:
+            s = s.split(sep, 1)[0]
+    parts: list[int] = []
+    for chunk in s.split("."):
+        if not chunk.isdigit():
+            return ()
+        parts.append(int(chunk))
+    return tuple(parts)
+
+
 def _check_for_update() -> str | None:
     """Quick non-blocking version check against the GitHub releases API.
     Cached for 24h in the user's config dir so we don't hammer the API.
-    Returns the latest tag if newer than __version__, else None."""
+    Returns the latest tag string IF it parses as strictly newer than
+    __version__, else None.
+
+    Comparing strictly newer (rather than not-equal) avoids the false
+    positive where a user on a development version (e.g. 2.0.0) sees
+    "v1.11.1 is available" because the GitHub release tag still lags
+    the local version.
+    """
     cache = _key_path().parent / "version-check.json"
+    cur_v = _version_tuple(__version__)
     try:
         if cache.exists():
             blob = json.loads(cache.read_text())
             if time.time() - blob.get("checked_at", 0) < 86400:
                 latest = blob.get("latest")
-                return latest if latest and latest != __version__ else None
+                if latest and _version_tuple(latest) > cur_v:
+                    return latest
+                return None
     except Exception:
         pass
     try:
         req = urllib.request.Request(
             f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
             headers={"User-Agent": f"muninn/{__version__}"})
-        with urllib.request.urlopen(req, timeout=3, context=_SSL_CTX) as r:
+        with urllib.request.urlopen(req, timeout=3, context=gungnir.transport.SSL_CTX) as r:
             data = json.loads(r.read())
             latest = (data.get("tag_name") or "").lstrip("v")
     except Exception:
@@ -1538,12 +1530,17 @@ def _check_for_update() -> str | None:
         cache.write_text(json.dumps({"checked_at": time.time(), "latest": latest}))
     except Exception:
         pass
-    return latest if latest and latest != __version__ else None
+    if latest and _version_tuple(latest) > cur_v:
+        return latest
+    return None
 
 
 def _run_update() -> int:
     """Try to update muninn in place. Uses `git pull` if we're in a git
-    checkout; otherwise prints the manual update instructions."""
+    checkout; otherwise downloads muninn.py + requirements.txt from raw
+    GitHub. Either path then `pip install`s requirements.txt so a release
+    that bumps deps (e.g. a new gungnir pin) doesn't leave the user with
+    an updated muninn.py importing a module they don't have."""
     import subprocess
     script_dir = Path(__file__).resolve().parent
     git_dir = script_dir / ".git"
@@ -1556,21 +1553,131 @@ def _run_update() -> int:
             if r.returncode != 0:
                 print(r.stderr.strip(), file=sys.stderr)
                 return r.returncode
+            _pip_install_requirements(script_dir)
             print(f"[muninn] now on muninn v{__version__} (re-run with --version "
                   f"to confirm latest)", file=sys.stderr)
             return 0
         except FileNotFoundError:
-            print("[muninn] git not found in PATH — install git or update manually",
+            print("[muninn] git not found in PATH. Install git, or download muninn.py manually.",
                   file=sys.stderr)
             return 1
     else:
-        print(f"[muninn] this copy isn't a git checkout. To update:", file=sys.stderr)
-        print(f"  1. delete this folder", file=sys.stderr)
-        print(f"  2. re-download: https://github.com/{GITHUB_REPO}/releases/latest",
+        return _update_from_raw(script_dir)
+
+
+def _fetch_raw(path: str, dest: Path) -> bool:
+    """Fetch a file from the repo's main branch to dest atomically.
+    Returns True on success, False on failure (logs the reason)."""
+    raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{path}"
+    print(f"[muninn] fetching {path} from {raw_url}", file=sys.stderr)
+    try:
+        req = urllib.request.Request(raw_url, headers={
+            "User-Agent": f"muninn/{__version__}"})
+        with urllib.request.urlopen(req, timeout=15, context=gungnir.transport.SSL_CTX) as r:
+            body = r.read()
+    except Exception as e:
+        print(f"[muninn] download of {path} failed: {e}", file=sys.stderr)
+        return False
+    tmp = dest.with_suffix(dest.suffix + ".new")
+    try:
+        tmp.write_bytes(body)
+        os.replace(tmp, dest)
+    except OSError as e:
+        print(f"[muninn] couldn't write {dest}: {e}", file=sys.stderr)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def _pip_install_requirements(script_dir: Path) -> None:
+    """Best-effort `python -m pip install -r requirements.txt` against the
+    interpreter currently running muninn. Never fails the caller — prints
+    a clear hint if pip is missing or the install errors out, so the
+    update return code still reflects the muninn.py update itself."""
+    import subprocess
+    req = script_dir / "requirements.txt"
+    if not req.exists():
+        print(f"[muninn] no requirements.txt at {req}, skipping deps install",
               file=sys.stderr)
-        print(f"     (or `git clone https://github.com/{GITHUB_REPO}` to get auto-update)",
+        return
+    print(f"[muninn] installing/refreshing deps from {req.name} "
+          f"(python -m pip install --upgrade -r requirements.txt)", file=sys.stderr)
+    try:
+        r = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade",
+                            "-r", str(req)], timeout=300)
+    except FileNotFoundError:
+        print("[muninn] python not found to invoke pip; run "
+              "`python -m pip install -r requirements.txt` manually.",
+              file=sys.stderr)
+        return
+    except subprocess.TimeoutExpired:
+        print("[muninn] pip install timed out; run "
+              "`python -m pip install -r requirements.txt` manually.",
+              file=sys.stderr)
+        return
+    if r.returncode != 0:
+        print(f"[muninn] pip install exited {r.returncode}; if the import "
+              f"errors below mention a missing module, run "
+              f"`python -m pip install -r requirements.txt` manually.",
+              file=sys.stderr)
+
+
+def _update_from_raw(script_dir: Path) -> int:
+    """Non-git fallback for --update: fetch muninn.py + requirements.txt
+    from raw GitHub and replace the local files atomically, then refresh
+    deps. Works for ZIP-downloaded installs."""
+    target = script_dir / "muninn.py"
+    raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/muninn.py"
+    print(f"[muninn] not a git checkout. Fetching latest muninn.py from "
+          f"{raw_url}", file=sys.stderr)
+    try:
+        req = urllib.request.Request(raw_url, headers={
+            "User-Agent": f"muninn/{__version__}"})
+        with urllib.request.urlopen(req, timeout=15, context=gungnir.transport.SSL_CTX) as r:
+            new_text = r.read().decode("utf-8")
+    except Exception as e:
+        print(f"[muninn] download failed: {e}", file=sys.stderr)
+        print(f"[muninn] manual download: "
+              f"https://github.com/{GITHUB_REPO}/releases/latest", file=sys.stderr)
+        return 1
+    try:
+        import ast
+        ast.parse(new_text)
+    except SyntaxError as e:
+        print(f"[muninn] downloaded file failed to parse, aborting: {e}",
               file=sys.stderr)
         return 1
+    import re as _re
+    m = _re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']',
+                   new_text, _re.MULTILINE)
+    new_version = m.group(1) if m else "?"
+    if new_version == __version__:
+        print(f"[muninn] already on the latest (v{__version__}). Refreshing "
+              f"requirements.txt in case a pinned dep moved.", file=sys.stderr)
+        _fetch_raw("requirements.txt", script_dir / "requirements.txt")
+        _pip_install_requirements(script_dir)
+        return 0
+    tmp = target.with_suffix(".py.new")
+    try:
+        tmp.write_text(new_text, encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError as e:
+        print(f"[muninn] couldn't write {target}: {e}", file=sys.stderr)
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return 1
+    print(f"[muninn] updated v{__version__} to v{new_version}", file=sys.stderr)
+    _fetch_raw("requirements.txt", script_dir / "requirements.txt")
+    _pip_install_requirements(script_dir)
+    print(f"[muninn] re-run muninn to pick up the new code "
+          f"(the current process is still running the old version).",
+          file=sys.stderr)
+    return 0
 
 
 def main() -> int:
@@ -1585,7 +1692,7 @@ def main() -> int:
                     version=f"muninn {__version__}")
     ap.add_argument("--update", action="store_true",
                     help="pull the latest version of muninn (uses git pull "
-                         "if you cloned the repo, otherwise prints download URL)")
+                         "if you cloned the repo, otherwise downloads muninn.py from GitHub)")
     ap.add_argument("input", nargs="*",
                     help="ADS-B capture file (.txt, .csv, .json) "
                          "OR a directory when used with --watch. "

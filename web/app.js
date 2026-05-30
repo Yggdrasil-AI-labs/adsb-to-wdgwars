@@ -74,6 +74,26 @@ await micropip.install("pyModeS")
   pyodide.FS.writeFile("/muninn.py", src);
   try { pyodide.FS.mkdir("/tmp"); } catch (_) {}
 
+  // Vendor gungnir: muninn.py does `import gungnir` at module load, so the
+  // package has to be on Pyodide's import path before we touch muninn. The
+  // Pages workflow drops the pinned gungnir sources into web/gungnir/ with
+  // a _files.json manifest. None of gungnir's runtime code is exercised in
+  // the browser (the upload envelope is built inline below), but the import
+  // still has to resolve.
+  setStatus("Loading gungnir transport package...", "");
+  const gungnirFiles = await fetch("./gungnir/_files.json").then(r => {
+    if (!r.ok) throw new Error("could not fetch gungnir/_files.json (" + r.status + ")");
+    return r.json();
+  });
+  try { pyodide.FS.mkdir("/gungnir"); } catch (_) {}
+  for (const fname of gungnirFiles) {
+    const gsrc = await fetch("./gungnir/" + fname).then(r => {
+      if (!r.ok) throw new Error("could not fetch gungnir/" + fname + " (" + r.status + ")");
+      return r.text();
+    });
+    pyodide.FS.writeFile("/gungnir/" + fname, gsrc);
+  }
+
   muninnVersion = pyodide.runPython("import sys; sys.path.insert(0, '/'); import muninn; muninn.__version__");
   versionPill.textContent = "muninn " + muninnVersion;
   setStatus("Ready. Drop an ADS-B file above.", "ok");

@@ -6,6 +6,7 @@ on:
     paths:
       - "web/**"
       - "muninn.py"
+      - "requirements.txt"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -34,6 +35,27 @@ jobs:
       # is regenerated here so a release-tagged commit gets the right parser.
       - name: Sync muninn.py into web/
         run: cp muninn.py web/muninn.py
+
+      # Vendor the pinned gungnir package into the Pages artifact so Pyodide
+      # can `import gungnir` client-side. Source of truth for the version is
+      # requirements.txt — the browser and the CLI run the same bytes. Emits
+      # web/gungnir/_files.json so app.js doesn't need a hardcoded file list.
+      - name: Vendor gungnir into web/
+        run: |
+          set -euo pipefail
+          URL=$(grep -oE 'https://github.com/HiroAlleyCat/gungnir/archive/[^ ]+' requirements.txt | head -1)
+          if [ -z "$URL" ]; then
+            echo "Could not find gungnir tarball URL in requirements.txt" >&2
+            exit 1
+          fi
+          echo "Fetching gungnir from $URL"
+          rm -rf web/gungnir
+          mkdir -p web/gungnir
+          curl -fsSL "$URL" -o /tmp/gungnir.tar.gz
+          tar -xzf /tmp/gungnir.tar.gz -C web/gungnir --strip-components=2 --wildcards '*/gungnir/*.py'
+          (cd web/gungnir && ls *.py | jq -R . | jq -s . > _files.json)
+          echo "Vendored gungnir:"
+          ls -la web/gungnir/
 
       # Stamp a per-deploy cache-bust onto the app.js URL in index.html.
       # Users with a cached old app.js will fetch fresh on the next visit
