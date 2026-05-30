@@ -28,6 +28,17 @@ Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRada
 > dropping valid Mode-S addresses on import. If you're on v1.11.0,
 > please upgrade to v1.11.1.
 
+> **Note on the 2026-05-30 star reset.** Muninn had 10 stargazers
+> and 1 watcher before a maintainer mistake (flipping the repo
+> visibility private→public to try to bust a stale GitHub
+> contributor cache) reset both counts to zero. GitHub Support
+> confirmed this is documented, intentional behavior on any
+> visibility change and the counts can't be restored on their end.
+> The repo itself, releases, history, and code are otherwise
+> unaffected. If you previously starred or watched Muninn and
+> wouldn't mind doing so again, it would be appreciated — no
+> hard feelings if you'd rather not.
+
 **Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
 formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
 supported — WDGoWars is a wardriving game, importing thousands of other
