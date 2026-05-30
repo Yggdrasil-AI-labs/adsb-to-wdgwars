@@ -249,7 +249,7 @@ No records are removed — these are warnings only. If you are deliberately aggr
 
 ## Updating
 
-Double-click **`update.bat`** (Windows) or run **`./update.sh`** (Mac/Linux) from the Muninn folder. The script:
+Open the `scripts/` folder and double-click **`update.bat`** (Windows) or run **`./scripts/update.sh`** (Mac/Linux) from the Muninn folder. The script:
 
 1. Pulls the latest `requirements.txt` from GitHub so any new dependencies are visible to pip.
 2. Runs `pip install --upgrade -r requirements.txt`.

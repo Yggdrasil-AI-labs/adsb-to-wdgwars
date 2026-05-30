@@ -14,7 +14,7 @@ if errorlevel 1 (
 )
 
 echo [1/3] Refreshing requirements.txt from GitHub...
-python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/adsb-to-wdgwars/main/requirements.txt', r'%~dp0requirements.txt')"
+python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/adsb-to-wdgwars/main/requirements.txt', r'%~dp0..\requirements.txt')"
 if errorlevel 1 (
     echo.
     echo Could not fetch requirements.txt. Check internet connection and
@@ -24,7 +24,7 @@ if errorlevel 1 (
 
 echo.
 echo [2/3] Installing/refreshing dependencies...
-python -m pip install --upgrade -r "%~dp0requirements.txt"
+python -m pip install --upgrade -r "%~dp0..\requirements.txt"
 if errorlevel 1 (
     echo.
     echo pip install failed. See messages above. Common fixes:
@@ -36,7 +36,7 @@ if errorlevel 1 (
 
 echo.
 echo [3/3] Updating muninn.py...
-python "%~dp0muninn.py" --update
+python "%~dp0..\muninn.py" --update
 
 :done
 echo.

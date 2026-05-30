@@ -5,7 +5,9 @@
 # muninn so it can import all of them cleanly.
 
 set -e
-cd "$(dirname "$0")"
+# Run from repo root so requirements.txt / muninn.py resolve correctly when
+# this script is invoked from scripts/ subdir.
+cd "$(dirname "$0")/.."
 
 if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
     echo "Muninn requires Python 3.10 or newer. Your current python3 is:"
