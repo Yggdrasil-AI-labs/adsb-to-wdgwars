@@ -150,6 +150,11 @@ elif fmt == "beast":
     rows = muninn.parse_beast(p)
 elif fmt == "csv":
     rows = muninn.parse_csv(p, fmt=None)
+elif fmt == "sqb":
+    # BaseStation timestamps are naive; treat as UTC by default — the
+    # web UI doesn't surface --sqb-tz. Self-hosters who need a local-
+    # time interpretation should use the CLI.
+    rows = muninn.parse_sqb(p)
 elif fmt == "empty":
     rows = {}
 else:
@@ -190,11 +195,11 @@ json.dumps({"format": fmt, "records": records, "warning": warning})
       // CSV parser sys.exit() — file was treated as CSV (didn't match any
       // other known format) and the columns weren't recognisable. Almost
       // always means the user dropped something that isn't ADS-B at all.
-      friendly += "This doesn't look like a recognised ADS-B capture. Supported: AVR (.txt), SBS-1 (.txt), dump1090 / readsb / VRS / tar1090 JSON, NDJSON, gzipped JSON, PortaPack Mayhem (.txt).";
+      friendly += "This doesn't look like a recognised ADS-B capture. Supported: AVR (.txt), SBS-1 (.txt), dump1090 / readsb / VRS / tar1090 JSON, NDJSON, gzipped JSON, PortaPack Mayhem (.txt), RTL1090 BaseStation (.sqb).";
     } else if (/JSONDecodeError|Expecting value/i.test(raw)) {
       friendly += "The file looks like JSON but doesn't parse. Check that it's a valid dump1090 / readsb aircraft.json or NDJSON.";
     } else if (/ValueError/i.test(raw) && /unsupported/i.test(raw)) {
-      friendly += "Format not recognised. Supported: AVR (.txt), SBS-1 / BaseStation (.txt), dump1090 / readsb / VRS JSON, NDJSON, gzipped JSON, PortaPack Mayhem.";
+      friendly += "Format not recognised. Supported: AVR (.txt), SBS-1 / BaseStation (.txt), dump1090 / readsb / VRS JSON, NDJSON, gzipped JSON, PortaPack Mayhem (.txt), RTL1090 BaseStation (.sqb).";
     } else {
       friendly += `(${last})`;
     }
