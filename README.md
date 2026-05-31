@@ -10,7 +10,7 @@
 
 # Muninn
 
-Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, Stratux, Mode-S Beast, RTL-SDR, PortaPack Mayhem, GDL-90 cockpit receivers) to WDGoWars-compatible JSON and optionally upload them. Auto-detects 12 input dialects and decompresses gzipped chunks transparently.
+Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, Stratux, Mode-S Beast, RTL-SDR, RTL1090, PortaPack Mayhem, GDL-90 cockpit receivers) to WDGoWars-compatible JSON and optionally upload them. Auto-detects 13 input dialects and decompresses gzipped chunks transparently.
 
 > **Note on v1.9.0 (Zigbee).** v1.9.0 added 802.15.4 / Zigbee capture
 > support and was withdrawn the next day in v1.10.0. The feature
@@ -188,6 +188,13 @@ Auto-detected from the first line of the file:
 | SBS-1 / BaseStation | `MSG,3,...` CSV | dump1090 `--net`, readsb port 30003 |
 | dump1090 JSON | `{"aircraft": [...]}` | `/run/readsb/aircraft.json` |
 | Generic CSV | `icao,lat,lon,alt,...` | anything with a header row |
+| BaseStation SQLite (`.sqb`) | SQLite file with `Aircraft` + `Flights` tables | RTL1090's SQLite logging plugin, PlanePlotter, Kinetic BaseStation |
+
+Notes on `.sqb`:
+- BaseStation stores one row per **flight** (not per position report), so muninn emits up to two records per flight: one at `StartTime` / `First*` and one at `EndTime` / `Last*`, whichever sides have valid coordinates.
+- Timestamps in BaseStation are naive strings like `"2024-08-15 14:32:11.123"` with no timezone information. Muninn defaults to treating them as **UTC** (matching the rest of muninn's output). If your BaseStation install logged in local time, pass `--sqb-tz America/New_York` (or any IANA zone) to convert on the fly. On Windows, the IANA zone database is provided by the `tzdata` PyPI package — install it with `pip install tzdata` if `--sqb-tz` reports an unknown zone.
+- BaseStation does not store `Last(GroundSpeed|Track)`, so the end-of-flight record surfaces `speed_kt=0` / `heading=0` rather than carrying forward the values from `First*`.
+- If `Flights` is absent or empty (some installs only populate `Aircraft`), muninn exits nonzero with a clear message rather than write an empty JSON.
 
 ---
 
@@ -201,8 +208,10 @@ Auto-detected from the first line of the file:
 --watch DIR        watch a folder; auto-convert (and upload) new files
 --watch-interval N seconds between watch polls (default: 30)
 --watch-glob G     glob for the watch dir (default: *.txt; use * for all)
---format FMT       force input format (auto|avr|sbs1|json|csv|mayhem)
+--format FMT       force input format (auto|avr|sbs1|json|csv|mayhem|sqb)
 --csv-format COLS  column-order hint for generic CSV inputs
+--sqb-tz ZONE      IANA timezone for interpreting BaseStation .sqb
+                   timestamps (default: treat as UTC)
 --setup            interactive API-key wizard
 --save-key KEY     non-interactive: save a given API key
 --whoami           validate your stored API key and show account stats

@@ -418,7 +418,8 @@ def detect_format(path: Path) -> str:
     # start with `~` from being misdetected.
     try:
         with path.open("rb") as fh:
-            head4 = fh.read(4)
+            head16 = fh.read(16)
+        head4 = head16[:4]
         if len(head4) >= 2 and head4[0] == 0x7E and head4[1] in (
             0x00, 0x07, 0x0A, 0x0B, 0x14, 0x4D, 0x65,
         ):
@@ -428,8 +429,20 @@ def detect_format(path: Path) -> str:
         # text file that happens to start with the Ctrl+Z character.
         if len(head4) >= 2 and head4[0] == 0x1A and head4[1] in (0x31, 0x32, 0x33):
             return "beast"
+        # RTL1090 / Kinetic BaseStation SQLite database. Every SQLite file
+        # begins with this exact 16-byte header; checking it (rather than
+        # just the extension) keeps a misnamed file from being treated as
+        # a database and lets a correctly-formatted .sqlite/.db with the
+        # BaseStation schema be detected too.
+        if head16 == b"SQLite format 3\x00":
+            return "sqb"
     except OSError:
         pass
+    # Extension hint when the magic-byte read failed (network mounts,
+    # permission quirks). Only triggers on .sqb specifically — generic
+    # SQLite files without that extension still need the magic-byte path.
+    if path.suffix.lower() == ".sqb":
+        return "sqb"
 
     # Gzip-aware open. tar1090 emits chunk_*.json.gz; some users hand-gzip
     # captures to keep them small. Detect by extension or magic bytes.
@@ -674,6 +687,182 @@ def parse_sbs1(path: Path) -> dict[str, dict]:
                           heading=e["heading"], first_seen=e["first_seen"])
         if rec:
             out[icao] = rec
+    return out
+
+
+# ── RTL1090 / BaseStation SQLite (.sqb) ─────────────────────────────────────
+# Kinetic Avionics BaseStation.sqb schema, as written by RTL1090's SQLite
+# logging plugin, PlanePlotter, and stock BaseStation. Two tables matter:
+#
+#   Aircraft  (AircraftID PK, ModeS, Registration, ...)
+#   Flights   (AircraftID FK, StartTime, EndTime, Callsign,
+#              FirstLat/Lon/Altitude/GroundSpeed/Track,
+#              LastLat/Lon/Altitude, ...)
+#
+# Quirks worth knowing about:
+#   * One row per FLIGHT, not per position report. We emit up to two
+#     records per flight — one at StartTime/First* and one at EndTime/Last*
+#     — whichever sides have valid coordinates.
+#   * Timestamps are local-time strings like "2024-08-15 14:32:11.123"
+#     with no timezone information. Default behaviour is to treat them as
+#     UTC, since muninn's output is UTC throughout. Pass --sqb-tz <IANA
+#     zone> (e.g. "America/New_York") to interpret them as local time in
+#     that zone and convert to UTC on the fly.
+#   * Schema drift — RTL1090 / Kinetic BaseStation / PlanePlotter all
+#     ship slightly different column sets. We use PRAGMA table_info to
+#     discover which columns are present and substitute NULL for any
+#     missing optional column, rather than failing the SELECT.
+#   * Some installs only populate Aircraft, not Flights (the logger was
+#     never enabled). In that case we exit nonzero with a clear message
+#     rather than emit an empty JSON.
+def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
+    import sqlite3
+
+    # Read-only URI — safe even if the .sqb is shared with a live
+    # BaseStation process. The journal file isn't touched.
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error as e:
+        sys.exit(f"[muninn] could not open {path.name} as SQLite: {e}")
+
+    try:
+        cur = conn.cursor()
+        tables = {row[0] for row in cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        if "Aircraft" not in tables:
+            sys.exit(f"[muninn] {path.name}: no Aircraft table — file is "
+                     f"not a BaseStation-schema SQLite database.")
+        if "Flights" not in tables:
+            sys.exit(f"[muninn] {path.name}: no Flights table — this looks "
+                     f"like an Aircraft-only BaseStation install (logger "
+                     f"never enabled), so there is nothing to upload.")
+
+        flight_cols = {row[1] for row in cur.execute("PRAGMA table_info(Flights)")}
+        ac_cols = {row[1] for row in cur.execute("PRAGMA table_info(Aircraft)")}
+
+        if "AircraftID" not in flight_cols:
+            sys.exit(f"[muninn] {path.name}: Flights table missing "
+                     f"AircraftID column — cannot join to Aircraft.ModeS "
+                     f"for ICAO.")
+        if "ModeS" not in ac_cols:
+            sys.exit(f"[muninn] {path.name}: Aircraft table missing ModeS "
+                     f"column — cannot extract ICAO addresses.")
+
+        # Build the projection dynamically so optional missing columns
+        # become NULL rather than raising. Order MUST match the unpack
+        # below.
+        wanted = [
+            ("a", "ModeS"),
+            ("f", "Callsign"),
+            ("f", "StartTime"),
+            ("f", "EndTime"),
+            ("f", "FirstLat"),
+            ("f", "FirstLon"),
+            ("f", "LastLat"),
+            ("f", "LastLon"),
+            ("f", "FirstAltitude"),
+            ("f", "LastAltitude"),
+            ("f", "FirstGroundSpeed"),
+            ("f", "FirstTrack"),
+        ]
+        select_parts = []
+        for tbl, col in wanted:
+            avail = ac_cols if tbl == "a" else flight_cols
+            if col in avail:
+                select_parts.append(f"{tbl}.{col}")
+            else:
+                select_parts.append("NULL")
+
+        sql = (
+            "SELECT " + ", ".join(select_parts) +
+            " FROM Flights f JOIN Aircraft a ON f.AircraftID = a.AircraftID"
+        )
+        flights = list(cur.execute(sql))
+    finally:
+        conn.close()
+
+    if not flights:
+        sys.exit(f"[muninn] {path.name}: Flights table is empty — nothing "
+                 f"to upload. (If you just enabled logging, give the "
+                 f"receiver time to record some flights first.)")
+
+    tz = None
+    if tz_override:
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(tz_override)
+        except Exception as e:
+            sys.exit(f"[muninn] --sqb-tz {tz_override!r} is not a "
+                     f"recognised IANA zone: {e}")
+
+    def _ts_to_utc_iso(s):
+        if not s:
+            return None
+        s = str(s).strip()
+        if not s:
+            return None
+        # BaseStation writes fractional seconds; muninn output is
+        # whole-second resolution, so drop them.
+        if "." in s:
+            s = s.split(".", 1)[0]
+        s = s.replace("/", "-").replace("T", " ")
+        try:
+            dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+        if tz is not None:
+            dt = dt.replace(tzinfo=tz).astimezone(timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    out: dict[str, dict] = {}
+    for idx, row in enumerate(flights):
+        (modes, callsign, st, et, flat, flon, llat, llon,
+         falt, lalt, fgs, ftrk) = row
+        icao = (modes or "").upper().strip()
+        if not icao:
+            continue
+        callsign = (callsign or "").strip()
+
+        # BaseStation writes literal 0.0 / 0.0 when the receiver had no
+        # position decoded at the point in question, so treat that as
+        # "no fix" rather than a position on the equator south of Ghana.
+        def _has_fix(la, lo):
+            return (
+                la is not None and lo is not None
+                and (float(la) != 0.0 or float(lo) != 0.0)
+            )
+
+        if _has_fix(flat, flon):
+            rec = _norm_record(
+                icao=icao, callsign=callsign,
+                lat=float(flat), lon=float(flon),
+                alt_ft=_coerce_int(falt),
+                speed_kt=_coerce_int(fgs),
+                heading=_coerce_int(ftrk),
+                first_seen=_ts_to_utc_iso(st) or _now_iso(),
+            )
+            if rec:
+                # Composite key — unlike SBS-1 streaming we deliberately
+                # keep both endpoints per flight, and may carry multiple
+                # flights for the same ICAO. Downstream only consumes
+                # rows.values().
+                out[f"{icao}-{idx}-first"] = rec
+
+        if _has_fix(llat, llon):
+            rec = _norm_record(
+                icao=icao, callsign=callsign,
+                lat=float(llat), lon=float(llon),
+                alt_ft=_coerce_int(lalt),
+                # BaseStation schema does not store Last(GroundSpeed|Track),
+                # so we surface 0 rather than carrying forward the First*
+                # values (which would be misleading on a long flight).
+                speed_kt=0, heading=0,
+                first_seen=_ts_to_utc_iso(et) or _now_iso(),
+            )
+            if rec:
+                out[f"{icao}-{idx}-last"] = rec
+
     return out
 
 
@@ -1269,7 +1458,8 @@ def _file_signature(p: Path) -> str:
         return ""
 
 
-def _convert_one(path: Path, fmt_override: str | None, csv_format: str | None) -> list[dict]:
+def _convert_one(path: Path, fmt_override: str | None, csv_format: str | None,
+                 sqb_tz: str | None = None) -> list[dict]:
     fmt = fmt_override if fmt_override and fmt_override != "auto" else detect_format(path)
     if fmt == "avr" or fmt == "avr-tagged":
         rows = parse_avr(path)
@@ -1281,6 +1471,8 @@ def _convert_one(path: Path, fmt_override: str | None, csv_format: str | None) -
         rows = parse_mayhem(path)
     elif fmt == "csv":
         rows = parse_csv(path, fmt=csv_format)
+    elif fmt == "sqb":
+        rows = parse_sqb(path, tz_override=sqb_tz)
     else:
         return []
     return list(rows.values())
@@ -1336,7 +1528,7 @@ def watch_dir(watch_dir: Path, args) -> int:
                 try:
                     print(f"\n[watch] processing {f.name}", file=sys.stderr)
                     records = _convert_one(f, args.format if args.format != "auto" else None,
-                                          args.csv_format)
+                                          args.csv_format, sqb_tz=args.sqb_tz)
                     print(f"[watch]   decoded {len(records)} aircraft", file=sys.stderr)
                     out_path = f.parent / f"{f.stem}.wdgwars.json"
                     out_path.write_text(json.dumps(_to_dump1090_fa(records), indent=2))
@@ -1388,6 +1580,8 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
         rows = parse_beast(path)
     elif fmt == "csv":
         rows = parse_csv(path, fmt=args.csv_format)
+    elif fmt == "sqb":
+        rows = parse_sqb(path, tz_override=args.sqb_tz)
     elif fmt == "empty":
         print(f"[muninn] {path.name}: empty file, skipping", file=sys.stderr)
         return 0, []
@@ -1685,8 +1879,9 @@ def main() -> int:
         description=f"Muninn v{__version__} — Convert ADS-B capture text files "
                     f"to WDGoWars aircraft JSON, and optionally upload to wdgwars.pl.",
         epilog="Format is auto-detected (AVR raw / SBS-1 / dump1090 JSON / "
-               "generic CSV / PortaPack Mayhem). For generic CSV inputs, pass "
-               "--csv-format to specify the column order.",
+               "generic CSV / PortaPack Mayhem / RTL1090 BaseStation .sqb). "
+               "For generic CSV inputs, pass --csv-format to specify the "
+               "column order.",
     )
     ap.add_argument("--version", action="version",
                     version=f"muninn {__version__}")
@@ -1725,10 +1920,15 @@ def main() -> int:
                     help="print JSON to stdout instead of writing a file")
     ap.add_argument("--no-save", action="store_true",
                     help="with --upload: skip writing the local audit-trail JSON")
-    ap.add_argument("--format", choices=["auto", "avr", "sbs1", "json", "csv", "mayhem"],
+    ap.add_argument("--format", choices=["auto", "avr", "sbs1", "json", "csv", "mayhem", "sqb"],
                     default="auto", help="force input format (default: auto-detect)")
     ap.add_argument("--csv-format", help="comma-separated column names for "
                     "generic CSV: icao,callsign,lat,lon,alt_ft,...")
+    ap.add_argument("--sqb-tz", dest="sqb_tz", metavar="ZONE", default=None,
+                    help="IANA timezone (e.g. America/New_York) for "
+                         "interpreting BaseStation .sqb timestamps. "
+                         "BaseStation does not store TZ info, so muninn "
+                         "defaults to treating those strings as UTC.")
     ap.add_argument("--upload", action="store_true",
                     help="POST to wdgwars.pl/api/upload/ after conversion")
     ap.add_argument("--dry-run", action="store_true",
