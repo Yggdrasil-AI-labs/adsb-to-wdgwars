@@ -2,6 +2,11 @@
 """muninn.py — convert ADS-B capture files to the WDGoWars aircraft
 upload JSON, and optionally POST directly to the server.
 
+Linked by the WDGoWars portal as the recommended advanced converter
+for input formats outside the built-in importer's scope (AVR raw
+Mode-S, Mode-S Beast binary, GDL-90 binary, gzipped tar1090, NDJSON,
+BaseStation .sqb, and the HMAC-signed /api/upload/ route).
+
 Auto-detects the input format from the first non-empty line:
 
   AVR raw Mode-S         lines like '*8D4840D6202CC371C32CE0576098;'

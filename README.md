@@ -12,6 +12,18 @@
 
 Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, Stratux, Mode-S Beast, RTL-SDR, RTL1090, PortaPack Mayhem, GDL-90 cockpit receivers) to WDGoWars-compatible JSON and optionally upload them. Auto-detects 13 input dialects and decompresses gzipped chunks transparently.
 
+> **Linked by WDGoWars as the recommended advanced converter.** The
+> WDGoWars portal includes a native importer for the common JSON
+> dialects (dump1090 / readsb / tar1090 / Stratux / VRS / Sleipnir)
+> and the SBS-1 / PortaPack Mayhem text formats — drag-and-drop a
+> file and it imports. For everything else — AVR raw Mode-S, Mode-S
+> Beast binary, GDL-90 binary, NDJSON, gzipped tar1090 chunks,
+> BaseStation `.sqb`, and the HMAC-signed `/api/upload/` route — the
+> portal links Muninn from `/help`, `/changelog`, and the
+> upload-profile UI as the recommended path. If your receiver
+> already speaks a dialect the portal accepts, you can skip Muninn;
+> if not, you're in the right place.
+
 > **Note on v1.9.0 (Zigbee).** v1.9.0 added 802.15.4 / Zigbee capture
 > support and was withdrawn the next day in v1.10.0. The feature
 > rested on a misread of the WDGoWars mesh channel (which is for
