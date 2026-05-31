@@ -37,7 +37,15 @@ from .transport import (
     DEFAULT_WHOAMI_TIMEOUT,
 )
 
-DEFAULT_API_URL = "https://wdgwars.pl/api/upload/"
+# /endpoint/* is a server-side PHP router alias of /api/* that bypasses
+# Cloudflare's per-IP L7 DDoS rate-limit. Same router, same HMAC envelope,
+# same response, but the URL pattern doesn't trip CF's automatic DDoS
+# protection — relevant for batch uploaders that burst-POST aircraft /
+# networks / etc. Flipped from /api/upload/ in v0.1.2 (2026-05-31) after
+# CF L7 protection started 429ing /api/* bursts before reaching origin
+# PHP. Consumers can still force /api/upload/ via the `api_url` kwarg.
+# /api/me stays on /api/* — single-call, not affected by burst limits.
+DEFAULT_API_URL = "https://wdgwars.pl/endpoint/upload/"
 ME_API_URL = "https://wdgwars.pl/api/me"
 
 # Characters that must not appear in a tool name — they'd let a caller

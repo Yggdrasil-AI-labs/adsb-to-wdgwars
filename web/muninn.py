@@ -49,7 +49,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.4"
+__version__ = "2.0.5"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -113,15 +113,14 @@ _client = gungnir.Client(
     user_agent_extra=GITHUB_URL,
 )
 
-# Overridden locally as of v2.0.4 to route uploads through the
-# /endpoint/* prefix, a server-side alias for /api/* that bypasses
-# Cloudflare's per-IP L7 DDoS protection. The /api/* path intermittently
-# 429s before reaching the origin at batch scale; /endpoint/* sees the
-# same router, same HMAC envelope, same response. gungnir's DEFAULT
-# stays on /api/* for other consumers; --api-url forces either if
-# needed. (gungnir.ME_API_URL is for /api/me which is single-call and
-# unaffected by burst rate-limiting.)
-DEFAULT_API_URL = "https://wdgwars.pl/endpoint/upload/"
+# Re-exported from gungnir so existing call-sites (notably the argparse
+# default for --api-url) keep working without change. Source of truth
+# lives in gungnir; touch it there if the server ever moves. As of
+# gungnir v0.1.2 (pinned in requirements.txt), DEFAULT_API_URL points
+# at /endpoint/upload/ — a server-side alias of /api/upload/ that
+# bypasses Cloudflare's per-IP L7 DDoS rate-limit. ME_API_URL stays
+# on /api/me (single-call, not affected by burst limits).
+DEFAULT_API_URL = gungnir.DEFAULT_API_URL
 ME_API_URL = gungnir.ME_API_URL
 
 # Persistent API key location — XDG-style on Linux/Mac, %APPDATA% on Windows.

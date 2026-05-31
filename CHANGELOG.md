@@ -4,6 +4,34 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.5] - 2026-05-31 - gungnir bump to v0.1.2 (upstream the /endpoint/* default)
+
+v2.0.4 hotfix-flipped Muninn's `DEFAULT_API_URL` locally to bypass
+Cloudflare's per-IP L7 DDoS rate-limit on `/api/*`. gungnir v0.1.2
+now ships the same flip at the library level, so every feeder pulling
+the default (wigle-to-wdgwars on next bump, future Heimdall, etc.)
+inherits the bypass without duplicating the override.
+
+### Changed
+
+- `requirements.txt` gungnir pin bumped `v0.1.1` → `v0.1.2`.
+- Vendored `web/gungnir/*.py` synced to gungnir v0.1.2 (Pyodide build
+  loads these directly, so upstream changes have to be re-vendored).
+- `muninn.py` and `web/muninn.py` reverted their local
+  `DEFAULT_API_URL = "https://wdgwars.pl/endpoint/upload/"` override
+  back to `DEFAULT_API_URL = gungnir.DEFAULT_API_URL`. Same effective
+  value, source of truth lives in gungnir again so future URL moves
+  only need a gungnir release.
+
+### Unchanged
+
+- `web/serve.py` upstream and `web/app.js` localStorage default were
+  already on `/endpoint/upload/` from v2.0.4 — they don't pull from
+  gungnir, so no further change needed.
+- `--api-url` flag unchanged. Force `/api/upload/` with
+  `--api-url https://wdgwars.pl/api/upload/` if needed.
+- `/api/me` (`--whoami`) unchanged.
+
 ## [2.0.4] - 2026-05-31 - Default upload URL bypasses Cloudflare L7 rate-limit
 
 WDGoWars portal sits behind Cloudflare. The free tier's L7 DDoS
