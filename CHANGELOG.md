@@ -4,6 +4,34 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.6] - 2026-05-31 - Web build: load sqlite3 so .sqb parsing works in-browser
+
+The web (Pyodide) build advertises `.sqb` in the drop zone, but dropping
+a real BaseStation SQLite file produced `[ERR] Couldn't parse
+BaseStation.sqb.` Pyodide unvendors `sqlite3` from the bundled stdlib
+into a separately-loadable package — without an explicit
+`pyodide.loadPackage("sqlite3")` before muninn's import, `parse_sqb`'s
+`import sqlite3` raises `ModuleNotFoundError` at parse time and the
+web UI surfaces a friendly catch-all error.
+
+CLI was never affected — real CPython has sqlite3 baked into the stdlib.
+SQB support has worked on CLI since v2.0.0; this just brings the web
+build in line.
+
+### Fixed
+
+- `web/app.js` `pyodide.loadPackage(["micropip", "ssl"])` extended to
+  include `"sqlite3"`. Same `loadPyodide` invocation, one extra
+  package, no other code paths affected.
+
+### Verified
+
+- CLI behaviour unchanged (regression sweep on `sbs1_real` / `stratux` /
+  `mayhem` still hits 10 / 12 / 6).
+- Real BaseStation SQB (637 aircraft, 788 flights) parses cleanly on
+  CLI to 1146 records — same expected output now flows through the
+  web build.
+
 ## [2.0.5] - 2026-05-31 - gungnir bump to v0.1.2 (upstream the /endpoint/* default)
 
 v2.0.4 hotfix-flipped Muninn's `DEFAULT_API_URL` locally to bypass
