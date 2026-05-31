@@ -70,9 +70,18 @@ those formats.
 Either freeze the comparison clock on both sides, or diff with
 `first_seen` excluded for stratux / vrs / mayhem.
 
-dump1090 / readsb / tar1090 derive `first_seen` from `now - seen_pos`,
-SBS-1 from generated date/time fields, ndjson from any included
-timestamp key — those should diff bit-exact.
+dump1090 / readsb / tar1090 use the **file-level `now` epoch** for every
+record (formatted as UTC `Y-m-d H:i:s`), not `now - seen_pos`. A naive
+read of dump1090's per-aircraft `seen_pos` suggests subtracting it from
+`now` to get the position-fix time — Muninn deliberately doesn't, because
+the snapshot timestamp is the canonical "when this record was observed"
+and per-aircraft `seen_pos` drift is recorded elsewhere. Portal-side
+ports should match: file-level `now` on every record.
+
+SBS-1 derives `first_seen` from the generated date/time fields (CSV
+columns 6/7). NDJSON uses any timestamp key the producer includes, or
+falls back to wall-clock. Both diff bit-exact when both sides agree on
+the source field.
 
 ### sbs1/real.txt: 10 records vs 11 extractor entries
 
