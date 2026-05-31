@@ -57,11 +57,18 @@ async function bootPyodide() {
     indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/",
   });
 
-  // Pyodide unvendors `ssl` from the stdlib; muninn.py imports it for the
-  // CLI's urllib uploads. The web frontend uses fetch() directly so the ssl
-  // code path is dead, but the top-level import has to resolve.
+  // Pyodide unvendors several stdlib modules into separately-loadable
+  // packages — they have to be requested up-front before any muninn.py
+  // import can succeed:
+  //   - ssl: muninn.py imports it for the CLI's urllib uploads. The web
+  //     frontend uses fetch() directly so the ssl code path is dead, but
+  //     the top-level import has to resolve.
+  //   - sqlite3: BaseStation .sqb parser uses it. Without this load, the
+  //     web UI would drop .sqb files into a friendly "[ERR] Couldn't
+  //     parse BaseStation.sqb" because `import sqlite3` at parse time
+  //     raises ModuleNotFoundError.
   setStatus("Loading runtime modules...", "");
-  await pyodide.loadPackage(["micropip", "ssl"]);
+  await pyodide.loadPackage(["micropip", "ssl", "sqlite3"]);
 
   // pyModeS is required for AVR raw Mode-S frame decoding. Pure-Python wheel.
   setStatus("Installing pyModeS (required for raw AVR captures)...", "");
