@@ -183,7 +183,7 @@ Two options:
 python3 muninn.py --upload
 ```
 
-First time, Muninn asks for your WDGoWars API key (y/n prompt — local conversion works fine without one). The key is saved locally in mode `0600`, scrubbed from all error output, and sent over TLS 1.2+ with an HMAC-SHA256-signed envelope to `https://wdgwars.pl/api/upload/`.
+First time, Muninn asks for your WDGoWars API key (y/n prompt — local conversion works fine without one). The key is saved locally in mode `0600`, scrubbed from all error output, and sent over TLS 1.2+ with an HMAC-SHA256-signed envelope to `https://wdgwars.pl/endpoint/upload/` (a server-side alias of `/api/upload/` that bypasses Cloudflare's per-IP L7 rate-limit — see the v2.0.4 changelog). Force `/api/upload/` with `--api-url` if needed.
 
 Grab your API key from your WDGoWars profile page.
 

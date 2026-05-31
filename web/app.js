@@ -29,7 +29,11 @@ const versionPill = $("version-pill");
 
 // Restore stored API key / URL.
 apikeyEl.value = localStorage.getItem("muninn.apikey") || "";
-apiurlEl.value = localStorage.getItem("muninn.apiurl") || "https://wdgwars.pl/api/upload/";
+// Default to /endpoint/upload/ — server-side alias of /api/upload/ that
+// bypasses Cloudflare's per-IP L7 DDoS rate-limit. Same router, same HMAC
+// envelope, same response. Either path works; this default removes a
+// stumble for users hitting CF at batch scale. See muninn.py docstring.
+apiurlEl.value = localStorage.getItem("muninn.apiurl") || "https://wdgwars.pl/endpoint/upload/";
 apikeyEl.addEventListener("change", () => localStorage.setItem("muninn.apikey", apikeyEl.value));
 apiurlEl.addEventListener("change", () => localStorage.setItem("muninn.apiurl", apiurlEl.value));
 

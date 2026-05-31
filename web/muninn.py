@@ -27,8 +27,12 @@ Output is a JSON array of:
    "type": "ADSB"}
 
 If --upload is given, the array is wrapped in the documented HMAC-SHA256
-envelope and POSTed to https://wdgwars.pl/api/upload/ (the trailing slash
-is required, without it the server rejects every payload as a replay).
+envelope and POSTed to https://wdgwars.pl/endpoint/upload/ (the trailing
+slash is required, without it the server rejects every payload as a
+replay). The /endpoint/* prefix is a server-side alias of /api/* that
+bypasses Cloudflare's per-IP L7 DDoS protection — at batch scale, /api/*
+intermittently 429s before the request reaches the origin. Override with
+--api-url if you need to force /api/upload/ for any reason.
 
 Examples
 --------
@@ -45,7 +49,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -109,10 +113,15 @@ _client = gungnir.Client(
     user_agent_extra=GITHUB_URL,
 )
 
-# Re-exported from gungnir so existing call-sites (notably the argparse
-# default for --api-url) keep working without change. Source of truth
-# lives in gungnir; touch it there if the server ever moves.
-DEFAULT_API_URL = gungnir.DEFAULT_API_URL
+# Overridden locally as of v2.0.4 to route uploads through the
+# /endpoint/* prefix, a server-side alias for /api/* that bypasses
+# Cloudflare's per-IP L7 DDoS protection. The /api/* path intermittently
+# 429s before reaching the origin at batch scale; /endpoint/* sees the
+# same router, same HMAC envelope, same response. gungnir's DEFAULT
+# stays on /api/* for other consumers; --api-url forces either if
+# needed. (gungnir.ME_API_URL is for /api/me which is single-call and
+# unaffected by burst rate-limiting.)
+DEFAULT_API_URL = "https://wdgwars.pl/endpoint/upload/"
 ME_API_URL = gungnir.ME_API_URL
 
 # Persistent API key location — XDG-style on Linux/Mac, %APPDATA% on Windows.
@@ -498,7 +507,7 @@ def _to_dump1090_fa(records: list[dict]) -> dict:
     """Wrap muninn's flat record list into dump1090-fa / readsb aircraft.json
     shape. This is what the WDGoWars *web-form* upload accepts (drag-and-drop
     of the .json file). The HMAC --upload path uses the flat list directly
-    against /api/upload/ and does NOT use this format."""
+    against /endpoint/upload/ (or /api/upload/) and does NOT use this format."""
     import time as _t
     out = []
     for r in records:
@@ -1930,7 +1939,7 @@ def main() -> int:
                          "BaseStation does not store TZ info, so muninn "
                          "defaults to treating those strings as UTC.")
     ap.add_argument("--upload", action="store_true",
-                    help="POST to wdgwars.pl/api/upload/ after conversion")
+                    help="POST to wdgwars.pl after conversion (default endpoint bypasses Cloudflare L7 rate-limit; see --api-url)")
     ap.add_argument("--dry-run", action="store_true",
                     help="with --upload, build the request but don't send")
     ap.add_argument("--key", help="WDGoWars API key (overrides $WDGWARS_API_KEY)")

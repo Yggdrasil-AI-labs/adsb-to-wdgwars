@@ -4,6 +4,49 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.4] - 2026-05-31 - Default upload URL bypasses Cloudflare L7 rate-limit
+
+WDGoWars portal sits behind Cloudflare. The free tier's L7 DDoS
+protection per-IP-rate-limits bursts of `/api/*` requests with HTTP
+429 + error code 1027 BEFORE the request reaches the origin's PHP
+router. The portal can't override the `ddos_l7` phase on free CF.
+
+At batch scale (Muninn's whole point — feeding a cron-driven RTL-SDR
+rig that accumulates aircraft over a shift, then bulk-uploads),
+this surfaces as intermittent 429s that gungnir's cooldown logic
+treats as a real server signal, deepening the back-off.
+
+LOCOSP shipped a server-side fix: `/endpoint/*` is a one-line PHP
+alias of `/api/*`. Same router, same HMAC envelope, same response,
+but the URL doesn't match Cloudflare's pattern and the request
+reaches the origin. Portal-side `/profile` and `/map` fetches
+flipped today.
+
+### Changed
+
+- `DEFAULT_API_URL` in CLI and web flavours flipped from
+  `https://wdgwars.pl/api/upload/` to
+  `https://wdgwars.pl/endpoint/upload/`. Identical semantics; URL
+  pattern doesn't trip CF's DDoS L7 filter.
+- `web/app.js` localStorage default for the Endpoint setting updated
+  to match. Existing users with a stored value keep it.
+- `web/serve.py` proxy upstream defaults to `/endpoint/upload/`.
+  Browser-facing prefix stays `/api/upload/` for back-compat with
+  the documented same-origin path; only the upstream forward URL
+  moved.
+- Docstrings, README, `--upload` help text updated to point at
+  `/endpoint/upload/` and explain the rationale.
+
+### Notes
+
+- `gungnir.DEFAULT_API_URL` is unchanged — other consumers
+  (`wigle-to-wdgwars`, future feeders) keep the `/api/*` default
+  until they bump independently. Muninn overrides locally.
+- `--api-url` flag unchanged. Force `/api/upload/` with
+  `--api-url https://wdgwars.pl/api/upload/` if needed.
+- `/api/me` (used by `--whoami`) is unchanged. Single-call, not
+  affected by burst rate-limiting.
+
 ## [2.0.3] - 2026-05-29 - Standardize gungnir pin across the family
 
 Muninn was pinned to gungnir commit `3ceac29d` (gungnir 0.1.0), while

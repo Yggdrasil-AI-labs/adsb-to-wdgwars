@@ -5,9 +5,11 @@ Muninn web — self-hosted server with WDGoWars upload proxy.
 The public GitHub Pages deploy can't direct-upload because wdgwars.pl's API
 doesn't return CORS headers. This script gives self-hosters a working path:
 it serves the static files AND proxies same-origin requests to /api/upload/
-through to https://wdgwars.pl/api/upload/. The browser sees a same-origin
-POST so CORS doesn't apply; the server-to-server forward inherits no such
-restriction.
+through to https://wdgwars.pl/endpoint/upload/. The browser sees a
+same-origin POST so CORS doesn't apply; the server-to-server forward
+inherits no such restriction. Upstream defaults to /endpoint/upload/, a
+server-side alias of /api/upload/ that bypasses Cloudflare's per-IP L7
+DDoS rate-limit. Override with --upstream to force /api/upload/ if needed.
 
 Usage:
     python3 serve.py [--port 8765] [--host 127.0.0.1] [--upstream URL]
@@ -28,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-DEFAULT_UPSTREAM = "https://wdgwars.pl/api/upload/"
+DEFAULT_UPSTREAM = "https://wdgwars.pl/endpoint/upload/"
 PROXY_PREFIX = "/api/upload"  # matches /api/upload AND /api/upload/
 
 
