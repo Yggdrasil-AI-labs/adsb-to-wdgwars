@@ -4,6 +4,38 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.7] - 2026-05-31 - Web build: parse_sqb no longer hangs on Pyodide
+
+v2.0.6 made `import sqlite3` work in the Pyodide build. Parsing still
+hung silently. Root cause: `parse_sqb` opened the database via
+`sqlite3.connect("file:...?mode=ro", uri=True)`. On CPython that gives
+a safe read-only handle even against a live BaseStation writer. On
+Pyodide's WASM sqlite3, the URI form against the virtual filesystem
+silently hangs: `connect()` never returns and never raises, so the
+web UI freezes on `> Parsing BaseStation.sqb...` forever. No exception
+means the catch block never fires, no `[ERR]` line ever surfaces, just
+a permanent spinner.
+
+Verified by capturing browser console state via a temporary
+`window.__cap` hook after re-dropping the file: nothing in console,
+`#status` stuck at the "Parsing..." text. That's the signature of a
+Python-side hang inside `pyodide.runPython()`, not a thrown exception.
+
+### Fixed
+
+- `parse_sqb` (CLI `muninn.py` + Pyodide `web/muninn.py`) now detects
+  `sys.platform == "emscripten"` and uses plain
+  `sqlite3.connect(str(path))` on the web build. Falls back to the
+  URI-mode connect on every other platform, so CLI users keep the
+  live-DB safety.
+
+### Verified
+
+- CLI regression sweep (`sbs1_real` / `stratux` / `mayhem`): 10 / 12 / 6,
+  unchanged.
+- CLI BaseStation SQB (637 aircraft, 788 flights): 1146 records,
+  unchanged from v2.0.5.
+
 ## [2.0.6] - 2026-05-31 - Web build: load sqlite3 so .sqb parsing works in-browser
 
 The web (Pyodide) build advertises `.sqb` in the drop zone, but dropping

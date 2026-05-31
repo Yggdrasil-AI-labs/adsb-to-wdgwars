@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.6"
+__version__ = "2.0.7"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -731,10 +731,22 @@ def parse_sbs1(path: Path) -> dict[str, dict]:
 def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
     import sqlite3
 
-    # Read-only URI — safe even if the .sqb is shared with a live
-    # BaseStation process. The journal file isn't touched.
+    # Read-only URI form is the right call on CPython — keeps the read
+    # safe even if the .sqb is shared with a live BaseStation process.
+    # The journal file isn't touched.
+    #
+    # In Pyodide (the browser build), the URI form silently hangs against
+    # the WASM sqlite3's virtual filesystem — connect() never returns and
+    # never raises, freezing the web UI on "Parsing BaseStation.sqb..."
+    # forever. Detect the emscripten platform and fall back to a plain
+    # path connect there. The web build drops files into a private MEMFS
+    # path that no other process can touch, so the URI-mode safety is
+    # academic anyway.
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        if sys.platform == "emscripten":
+            conn = sqlite3.connect(str(path))
+        else:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     except sqlite3.Error as e:
         sys.exit(f"[muninn] could not open {path.name} as SQLite: {e}")
 
