@@ -30,3 +30,4 @@ api.key
 *.json
 !examples/*.json
 !web/gungnir/*.json
+!parity-fixtures/**/*.json

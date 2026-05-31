@@ -1,0 +1,134 @@
+[
+  {
+    "icao": "ABD971",
+    "callsign": "SWA1378",
+    "lat": 41.452068,
+    "lon": -82.023862,
+    "alt_ft": 11475,
+    "speed_kt": 326,
+    "heading": 250,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A39EF2",
+    "callsign": "EJM333",
+    "lat": 41.658573,
+    "lon": -81.984707,
+    "alt_ft": 40000,
+    "speed_kt": 393,
+    "heading": 286,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "C04394",
+    "callsign": "CJT1905",
+    "lat": 41.233133,
+    "lon": -81.920804,
+    "alt_ft": 32550,
+    "speed_kt": 391,
+    "heading": 214,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A53F20",
+    "callsign": "SWA1409",
+    "lat": 41.486889,
+    "lon": -81.910486,
+    "alt_ft": 8250,
+    "speed_kt": 250,
+    "heading": 233,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "AA7426",
+    "callsign": "UAL2035",
+    "lat": 41.601594,
+    "lon": -81.904609,
+    "alt_ft": 35000,
+    "speed_kt": 527,
+    "heading": 98,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A42B45",
+    "callsign": "DAL2805",
+    "lat": 41.110519,
+    "lon": -81.640564,
+    "alt_ft": 34000,
+    "speed_kt": 362,
+    "heading": 302,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A41144",
+    "callsign": "DAL2594",
+    "lat": 41.674576,
+    "lon": -81.476794,
+    "alt_ft": 34000,
+    "speed_kt": 368,
+    "heading": 291,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A1775F",
+    "callsign": "DAL707",
+    "lat": 41.295419,
+    "lon": -81.46843,
+    "alt_ft": 36000,
+    "speed_kt": 357,
+    "heading": 276,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "AC07DC",
+    "callsign": "",
+    "lat": 41.957794,
+    "lon": -81.260126,
+    "alt_ft": 36000,
+    "speed_kt": 364,
+    "heading": 260,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A1244B",
+    "callsign": "UAL2168",
+    "lat": 41.5313,
+    "lon": -81.246196,
+    "alt_ft": 35000,
+    "speed_kt": 540,
+    "heading": 96,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "ADA5EE",
+    "callsign": "JBU348",
+    "lat": 41.697212,
+    "lon": -80.925676,
+    "alt_ft": 33000,
+    "speed_kt": 522,
+    "heading": 67,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  },
+  {
+    "icao": "AC4090",
+    "callsign": "N889PG",
+    "lat": 41.778946,
+    "lon": -80.628412,
+    "alt_ft": 0,
+    "speed_kt": 0,
+    "heading": 0,
+    "first_seen": "2026-05-11 00:37:26",
+    "type": "ADSB"
+  }
+]

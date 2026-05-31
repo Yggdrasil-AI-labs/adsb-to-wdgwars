@@ -1,0 +1,35 @@
+[
+  {
+    "icao": "A12345",
+    "callsign": "SWA588",
+    "lat": 41.46287,
+    "lon": -82.24103,
+    "alt_ft": 40000,
+    "speed_kt": 420,
+    "heading": 275,
+    "first_seen": "2026-05-10 13:45:24",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A8AF98",
+    "callsign": "EJA659",
+    "lat": 41.53758,
+    "lon": -81.30266,
+    "alt_ft": 37000,
+    "speed_kt": 0,
+    "heading": 0,
+    "first_seen": "2026-05-10 13:46:12",
+    "type": "ADSB"
+  },
+  {
+    "icao": "ACDF9A",
+    "callsign": "",
+    "lat": 41.40016,
+    "lon": -80.93922,
+    "alt_ft": 35000,
+    "speed_kt": 0,
+    "heading": 0,
+    "first_seen": "2026-05-10 13:47:01",
+    "type": "ADSB"
+  }
+]

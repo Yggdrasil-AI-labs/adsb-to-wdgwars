@@ -1,0 +1,112 @@
+[
+  {
+    "icao": "A42B45",
+    "callsign": "DAL2805",
+    "lat": 41.083467,
+    "lon": -81.584285,
+    "alt_ft": 34050,
+    "speed_kt": 363,
+    "heading": 303,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "ABD971",
+    "callsign": "SWA1378",
+    "lat": 41.452068,
+    "lon": -82.023862,
+    "alt_ft": 11475,
+    "speed_kt": 327,
+    "heading": 251,
+    "first_seen": "2026-05-11 00:36:31",
+    "type": "ADSB"
+  },
+  {
+    "icao": "AA7426",
+    "callsign": "UAL2035",
+    "lat": 41.611788,
+    "lon": -81.998312,
+    "alt_ft": 35000,
+    "speed_kt": 528,
+    "heading": 98,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A41144",
+    "callsign": "DAL2594",
+    "lat": 41.655222,
+    "lon": -81.412141,
+    "alt_ft": 34000,
+    "speed_kt": 368,
+    "heading": 292,
+    "first_seen": "2026-05-11 00:36:55",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A39EF2",
+    "callsign": "EJM333",
+    "lat": 41.643356,
+    "lon": -81.914125,
+    "alt_ft": 40000,
+    "speed_kt": 393,
+    "heading": 286,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A1244B",
+    "callsign": "UAL2168",
+    "lat": 41.539214,
+    "lon": -81.338686,
+    "alt_ft": 35000,
+    "speed_kt": 541,
+    "heading": 96,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "C04394",
+    "callsign": "",
+    "lat": 41.270874,
+    "lon": -81.886963,
+    "alt_ft": 33275,
+    "speed_kt": 390,
+    "heading": 213,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A53F20",
+    "callsign": "SWA1409",
+    "lat": 41.502903,
+    "lon": -81.877016,
+    "alt_ft": 6750,
+    "speed_kt": 226,
+    "heading": 254,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A1775F",
+    "callsign": "DAL707",
+    "lat": 41.289321,
+    "lon": -81.403011,
+    "alt_ft": 36000,
+    "speed_kt": 357,
+    "heading": 277,
+    "first_seen": "2026-05-11 00:36:56",
+    "type": "ADSB"
+  },
+  {
+    "icao": "ADA5EE",
+    "callsign": "",
+    "lat": 41.65983,
+    "lon": -81.046845,
+    "alt_ft": 32975,
+    "speed_kt": 524,
+    "heading": 68,
+    "first_seen": "2026-05-11 00:36:49",
+    "type": "ADSB"
+  }
+]
