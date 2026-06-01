@@ -76,7 +76,7 @@ Muninn ships in **two flavours** that share the same parsing core. Use whichever
 | | **Web (browser)** | **CLI (terminal)** |
 |---|---|---|
 | **For** | One-off uploads, admins, anyone without Python | Headless boxes, RTL-SDR rigs, cron, scripted feeds |
-| **Install** | None — open a URL | Clone repo, run `python3 muninn.py` |
+| **Install** | None — open a URL | Clone repo, run `./run.sh` |
 | **Where parsing happens** | In your browser (Pyodide / WASM) | Locally with stdlib Python |
 | **Internet required** | Yes (initial page load, ~10 MB cached) | No (only for `--update` and uploads) |
 | **Runs without a display** | No | **Yes** — headless-safe |
@@ -110,10 +110,10 @@ Then point Muninn at the decoder's output:
 
 ```bash
 # One-shot: convert + upload the current snapshot
-python3 muninn.py /run/dump1090-fa/aircraft.json --upload
+./run.sh /run/dump1090-fa/aircraft.json --upload
 
 # Continuous: watch the decoder's output folder
-python3 muninn.py --watch /run/dump1090-fa --watch-glob 'aircraft.json'
+./run.sh --watch /run/dump1090-fa --watch-glob 'aircraft.json'
 ```
 
 ### Antenna reality check
@@ -166,7 +166,7 @@ Pick whichever you prefer — it remembers your choice. On Windows, picking opti
 ### The day-to-day workflow
 
 1. Drop your `ADSB.TXT` (or any supported capture file) into the `input` folder.
-2. Run `python3 muninn.py` (or double-click the desktop shortcut if you have one).
+2. Run `./run.sh` (or double-click the desktop shortcut if you have one).
 3. Grab the converted `.wdgwars.json` from the `output` folder.
 
 Multiple files in `input/` get converted in one pass.
@@ -176,7 +176,7 @@ Multiple files in `input/` get converted in one pass.
 If you prefer to skip the folder workflow:
 
 ```bash
-python3 muninn.py /path/to/your-capture.txt
+./run.sh /path/to/your-capture.txt
 ```
 
 Output goes next to the input file (`your-capture.wdgwars.json`).
@@ -192,7 +192,7 @@ Two options:
 **Option B — let Muninn upload for you.** Add `--upload`:
 
 ```bash
-python3 muninn.py --upload
+./run.sh --upload
 ```
 
 First time, Muninn asks for your WDGoWars API key (y/n prompt — local conversion works fine without one). The key is saved locally in mode `0600`, scrubbed from all error output, and sent over TLS 1.2+ with an HMAC-SHA256-signed envelope to `https://wdgwars.pl/endpoint/upload/` (a server-side alias of `/api/upload/` that bypasses Cloudflare's per-IP L7 rate-limit — see the v2.0.4 changelog). Force `/api/upload/` with `--api-url` if needed.
@@ -206,8 +206,8 @@ Grab your API key from your WDGoWars profile page.
 `muninn.py --setup` offers to install a scheduled task at the end. You can also configure scheduling at any time:
 
 ```bash
-python3 muninn.py --schedule          # interactive
-python3 muninn.py --unschedule        # remove
+./run.sh --schedule          # interactive
+./run.sh --unschedule        # remove
 ```
 
 Two modes:
@@ -228,7 +228,7 @@ The interactive flow shows the exact unit / cron line / scheduled task that will
 For headless / scripted install:
 
 ```bash
-python3 muninn.py --schedule \
+./run.sh --schedule \
   --schedule-mode periodic \
   --schedule-input /run/dump1090-fa \
   --schedule-glob 'aircraft.json' \
@@ -340,7 +340,7 @@ This order matters across versions that add or bump a dependency — pip has to 
 If you prefer the CLI:
 
 ```bash
-python3 muninn.py --update
+./run.sh --update
 ```
 
 `muninn.py --update` also refreshes `requirements.txt` and re-runs pip itself, so direct CLI updates self-heal too — but only if `muninn.py` can already load (i.e. its current deps are installed). The wrapper script is the more robust path because it bootstraps deps before importing anything.
@@ -359,7 +359,7 @@ del "%APPDATA%\muninn\folders.json"        (Windows)
 rm  ~/.config/muninn/folders.json          (Mac/Linux)
 
 # API key (just re-save it)
-python3 muninn.py --setup
+./run.sh --setup
 ```
 
 ---
