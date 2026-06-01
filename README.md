@@ -142,9 +142,12 @@ transport) over plain HTTPS.
 ```bash
 git clone https://github.com/HiroAlleyCat/adsb-to-wdgwars
 cd adsb-to-wdgwars
-python3 -m pip install -r requirements.txt
-python3 muninn.py
+python3 -m venv .venv          # required on Bookworm / Homebrew (PEP 668)
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python muninn.py
 ```
+
+(`setup.sh` does all of the above for you — this block is just the manual equivalent.)
 
 On first run, Muninn asks **where** you want your input/output folders:
 

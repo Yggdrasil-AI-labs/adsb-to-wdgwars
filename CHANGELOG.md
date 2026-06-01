@@ -4,6 +4,41 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.8] - 2026-06-01 - setup.sh: PEP 668 / Bookworm fix
+
+`setup.sh`, `run.sh`, and `update.sh` now install Muninn into a
+project-local `.venv/` instead of the system Python.
+
+On Raspberry Pi OS Bookworm, Debian 12+, Ubuntu 23.04+, and Homebrew
+Python, the previous `python3 -m pip install -r requirements.txt` line
+errored out with `error: externally-managed-environment` (PEP 668).
+The script crashed before saving the API key. Reported by a Pi24 user
+in the WDGoWars Discord.
+
+The wrappers now `python3 -m venv .venv` on first run and call
+`.venv/bin/python` for every subsequent step. `run.sh` and `update.sh`
+detect the venv and reuse it. The venv path is project-local, so
+nothing on the system Python changes.
+
+If `python3 -m venv` itself fails (the `python3-venv` apt package
+is not installed on every Raspberry Pi OS image), the script prints
+the exact `sudo apt install -y python3-venv python3-full` line and
+exits cleanly instead of leaving a half-installed state.
+
+Windows `setup.bat` is unchanged — Windows Python ships without PEP 668
+enforcement, so `python -m pip install` still works there.
+
+### Fixed
+
+- `setup.sh` no longer fails with `externally-managed-environment` on
+  PEP 668 distros. Installs into `.venv/` instead.
+- `run.sh` and `update.sh` now use `.venv/bin/python` when present.
+
+### Changed
+
+- README Option B now shows the manual `python3 -m venv .venv` flow
+  to match what `setup.sh` does.
+
 ## [2.0.7] - 2026-05-31 - Web build: parse_sqb no longer hangs on Pyodide
 
 v2.0.6 made `import sqlite3` work in the Pyodide build. Parsing still
