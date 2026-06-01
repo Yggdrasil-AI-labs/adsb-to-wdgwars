@@ -163,6 +163,16 @@ On first run, Muninn asks **where** you want your input/output folders:
 
 Pick whichever you prefer — it remembers your choice. On Windows, picking option 2 also offers to create a desktop shortcut with the raven icon. Double-click the shortcut and Muninn runs.
 
+### Confirm Muninn understands your decoder's output first
+
+If you're wiring up a new capture source (a JSON grabber, a custom decoder, an NDJSON pipeline), check the parser sees what you expect before turning on `--upload`:
+
+```bash
+./run.sh /path/to/your-capture.ndjson.gz --preview
+```
+
+Prints the first 6 normalised records as JSON-lines on stdout, then exits. No file write, no upload. If the records look right (correct ICAOs, sensible lat/lon, the callsign field your decoder uses), you can safely wire `--upload` or `--schedule` after.
+
 ### The day-to-day workflow
 
 1. Drop your `ADSB.TXT` (or any supported capture file) into the `input` folder.

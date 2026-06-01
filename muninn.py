@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.9"
+__version__ = "2.0.10"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -2269,6 +2269,16 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
         print(f"[muninn] decoded {len(records)} unique aircraft with positions",
               file=sys.stderr)
 
+    # --preview: print the first 6 normalised records as JSON-lines and stop.
+    # No file write, no upload. Mirrors Heimdall's --preview for muscle-memory
+    # consistency across the feeder family. Caller (the main dispatcher) also
+    # gates --upload behind `not args.preview` so `--preview --upload`
+    # surfaces the parse without actually posting.
+    if getattr(args, "preview", False):
+        for rec in records[:6]:
+            print(json.dumps(rec))
+        return 0, records
+
     web_payload = _to_dump1090_fa(records)
     out_path: Path | None = None
 
@@ -2629,6 +2639,13 @@ def main() -> int:
                          "defaults to treating those strings as UTC.")
     ap.add_argument("--upload", action="store_true",
                     help="POST to wdgwars.pl after conversion (default endpoint bypasses Cloudflare L7 rate-limit; see --api-url)")
+    ap.add_argument("--preview", action="store_true",
+                    help="parse the input and print the first 6 normalised "
+                         "records as JSON-lines to stdout, then exit. No "
+                         "file write, no upload. Useful for confirming the "
+                         "parser understands your decoder's output before "
+                         "wiring it into a watch loop or schedule. Mirrors "
+                         "Heimdall's --preview for cross-tool consistency.")
     ap.add_argument("--dry-run", action="store_true",
                     help="with --upload, build the request but don't send")
     ap.add_argument("--key", help="WDGoWars API key (overrides $WDGWARS_API_KEY)")
@@ -2802,7 +2819,11 @@ def main() -> int:
                 print(f"[muninn] skipped {f.name} (rc={rc})", file=sys.stderr)
                 continue
             all_records.extend(recs)
-        upload_rc = _do_upload(all_records, args) if (args.upload and all_records) else 0
+        upload_rc = (
+            _do_upload(all_records, args)
+            if (args.upload and all_records and not args.preview)
+            else 0
+        )
         if args.open_after:
             for d in _OUT_DIRS_WRITTEN:
                 _open_folder(d)
@@ -2812,7 +2833,11 @@ def main() -> int:
     rc, records = _process_one_file(path, args)
     if rc != 0:
         return rc
-    upload_rc = _do_upload(records, args) if args.upload else 0
+    upload_rc = (
+        _do_upload(records, args)
+        if (args.upload and not args.preview)
+        else 0
+    )
     if args.open_after:
         for d in _OUT_DIRS_WRITTEN:
             _open_folder(d)
