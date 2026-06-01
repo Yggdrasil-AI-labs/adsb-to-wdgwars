@@ -201,6 +201,49 @@ Grab your API key from your WDGoWars profile page.
 
 ---
 
+## Running on a schedule
+
+`muninn.py --setup` offers to install a scheduled task at the end. You can also configure scheduling at any time:
+
+```bash
+python3 muninn.py --schedule          # interactive
+python3 muninn.py --unschedule        # remove
+```
+
+Two modes:
+
+- **Watch** — long-running daemon that uploads new captures as soon as they appear. Best for decoders that write a new file per capture session (tar1090 chunks, NDJSON sessions, MeshCore exports).
+- **Periodic** — runs every N minutes (1–60) against the current state of the folder. Best for decoders that rewrite a single rolling file in place (dump1090-fa, readsb, VRS).
+
+Per-platform mechanism, all user-scope (no sudo):
+
+| Platform | Mechanism |
+|---|---|
+| Linux with systemd | `~/.config/systemd/user/muninn-upload.{service,timer}` |
+| macOS / Linux without systemd | user crontab (periodic only — cron can't run daemons) |
+| Windows | `schtasks /Create` at user scope |
+
+The interactive flow shows the exact unit / cron line / scheduled task that will be installed and asks "Install now?" before touching your system. The marker comment `managed-by-muninn` flags entries Muninn owns, so `--unschedule` removes only what was installed by Muninn (your other crontab entries are left alone).
+
+For headless / scripted install:
+
+```bash
+python3 muninn.py --schedule \
+  --schedule-mode periodic \
+  --schedule-input /run/dump1090-fa \
+  --schedule-glob 'aircraft.json' \
+  --schedule-interval 5
+```
+
+Verify and tail logs (Linux/systemd example):
+
+```bash
+systemctl --user status muninn-upload.timer
+journalctl --user -u muninn-upload.timer -f
+```
+
+---
+
 ## Supported input formats
 
 Auto-detected from the first line of the file:

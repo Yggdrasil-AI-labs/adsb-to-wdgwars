@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.8"
+__version__ = "2.0.9"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -90,7 +90,10 @@ import csv
 import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import textwrap
 import time
 import urllib.error
 import urllib.request
@@ -376,11 +379,20 @@ def interactive_setup() -> int:
 
         save_key(key)
         print("", file=sys.stderr)
-        print(" ✓ Setup complete. You can now run uploads without --key:",
+        print(" ✓ API key saved. You can now run uploads without --key:",
               file=sys.stderr)
         print("   python3 muninn.py yourfile.txt --upload",
               file=sys.stderr)
-        print("", file=sys.stderr)
+        # Offer to install a scheduled task as a second optional step.
+        # Skipped silently on errors so the API-key setup is never
+        # held hostage by a scheduler hiccup.
+        try:
+            interactive_schedule_setup()
+        except (KeyboardInterrupt, EOFError):
+            print("\n[muninn] schedule setup skipped", file=sys.stderr)
+        except Exception as e:
+            print(f"\n[muninn] schedule setup error (skipped): {e}",
+                  file=sys.stderr)
         return 0
 
 
@@ -1583,6 +1595,532 @@ def watch_dir(watch_dir: Path, args) -> int:
         return 0
 
 
+# ── Scheduling (--schedule / --unschedule) ─────────────────────────────────
+#
+# Two modes:
+#   watch    — long-running daemon that watches a directory and uploads new
+#              files as they appear. Best for decoders that write one file
+#              per capture session (tar1090 chunks, NDJSON sessions).
+#   periodic — runs every N minutes against the current state of a folder.
+#              Best for decoders that rewrite a single rolling file in place
+#              (dump1090-fa, readsb, VRS).
+#
+# Mechanism per platform:
+#   Linux with systemd  — user systemd units in ~/.config/systemd/user/
+#                         (no sudo). Default on Pi OS / Debian / Ubuntu.
+#   Linux without systemd, macOS — user crontab. Periodic-mode only;
+#                                  watch-mode users get a copy-paste hint.
+#   Windows             — schtasks /Create at user scope.
+#
+# Everything is idempotent — re-running setup detects an existing install
+# and replaces it. The marker comment `managed-by-muninn` flags entries
+# Muninn owns so uninstall is exact.
+
+SCHEDULE_MARKER = "managed-by-muninn"
+SYSTEMD_SERVICE_NAME = "muninn-upload"
+WINDOWS_TASK_WATCH = "Muninn-Watch"
+WINDOWS_TASK_PERIODIC = "Muninn-Upload"
+
+
+def _python_exe() -> str:
+    """Absolute path to the Python that's running us. Used in scheduler
+    units so PATH changes (or systemd's minimal environment) can't pick
+    a different interpreter."""
+    return sys.executable
+
+
+def _muninn_script() -> Path:
+    """Absolute path to this muninn.py file."""
+    return Path(__file__).resolve()
+
+
+def _guess_decoder_dirs() -> list[Path]:
+    """Common decoder output directories that exist on this system.
+    Ordered best-guess first. Used as default suggestions in the
+    interactive scheduler prompt."""
+    candidates = []
+    if sys.platform.startswith("linux"):
+        candidates = [
+            Path("/run/dump1090-fa"),
+            Path("/run/readsb"),
+            Path("/run/adsbfi-feed"),
+            Path("/run/dump1090"),
+            Path("/var/run/dump1090-fa"),
+            Path("/var/run/readsb"),
+        ]
+    elif sys.platform == "darwin":
+        candidates = [
+            Path("/tmp/dump1090"),
+            Path("/usr/local/var/dump1090"),
+        ]
+    elif sys.platform == "win32":
+        candidates = [
+            Path(r"C:\Tools\dump1090-win"),
+            Path(r"C:\dump1090"),
+            Path.home() / "dump1090",
+        ]
+    return [c for c in candidates if c.is_dir()]
+
+
+def _guess_glob_for_dir(d: Path) -> str:
+    """Best-guess file pattern for a decoder output dir."""
+    try:
+        if (d / "aircraft.json").exists():
+            return "aircraft.json"
+        if any(d.glob("chunk_*.json.gz")):
+            return "chunk_*.json.gz"
+        if any(d.glob("*.ndjson.gz")):
+            return "*.ndjson.gz"
+        if any(d.glob("*.json")):
+            return "*.json"
+    except (OSError, PermissionError):
+        pass
+    return "aircraft.json"
+
+
+def _systemd_user_dir() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "systemd" / "user"
+
+
+def _has_systemd() -> bool:
+    """True if this Linux system runs systemd and has systemctl on PATH."""
+    if not sys.platform.startswith("linux"):
+        return False
+    if shutil.which("systemctl") is None:
+        return False
+    return Path("/run/systemd/system").exists()
+
+
+def _schedule_mechanism() -> str:
+    """Decide which scheduler to use on this platform."""
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform.startswith("linux") and _has_systemd():
+        return "systemd"
+    # macOS + Linux-without-systemd both fall back to cron
+    return "cron"
+
+
+# ── Pure renderers (no side effects, tested in isolation) ──────────────────
+
+def render_systemd_units(mode: str, input_dir: Path, glob: str,
+                         interval_min: int, python_exe: str,
+                         muninn_py: Path) -> dict[str, str | None]:
+    """Pure: render systemd unit text for the chosen mode.
+
+    Returns {"service": str, "timer": str | None}. Timer is None for
+    watch mode (long-running service needs no timer).
+    """
+    if mode == "watch":
+        service = (
+            "[Unit]\n"
+            "Description=Muninn ADS-B watch+upload\n"
+            f"# {SCHEDULE_MARKER}\n"
+            "After=network-online.target\n"
+            "Wants=network-online.target\n"
+            "\n"
+            "[Service]\n"
+            "Type=simple\n"
+            f"ExecStart={python_exe} {muninn_py} --watch {input_dir} "
+            f"--watch-glob {glob!r} --upload\n"
+            "Restart=on-failure\n"
+            "RestartSec=10s\n"
+            "\n"
+            "[Install]\n"
+            "WantedBy=default.target\n"
+        )
+        return {"service": service, "timer": None}
+    if mode == "periodic":
+        service = (
+            "[Unit]\n"
+            "Description=Muninn ADS-B upload (one-shot)\n"
+            f"# {SCHEDULE_MARKER}\n"
+            "\n"
+            "[Service]\n"
+            "Type=oneshot\n"
+            f"ExecStart={python_exe} {muninn_py} {input_dir} --upload\n"
+        )
+        timer = (
+            "[Unit]\n"
+            f"Description=Run Muninn every {interval_min} minutes\n"
+            f"# {SCHEDULE_MARKER}\n"
+            "\n"
+            "[Timer]\n"
+            "OnBootSec=2min\n"
+            f"OnUnitActiveSec={interval_min}min\n"
+            "Persistent=true\n"
+            "\n"
+            "[Install]\n"
+            "WantedBy=timers.target\n"
+        )
+        return {"service": service, "timer": timer}
+    raise ValueError(f"unknown mode: {mode!r}")
+
+
+def render_cron_line(input_dir: Path, interval_min: int,
+                     python_exe: str, muninn_py: Path) -> str:
+    """Pure: render a cron line for periodic mode. Watch mode isn't
+    supported on cron (cron can't run daemons)."""
+    cron_min = "*" if interval_min == 1 else f"*/{interval_min}"
+    log = "$HOME/.muninn-cron.log"
+    return (f"{cron_min} * * * * {python_exe} {muninn_py} {input_dir} "
+            f"--upload >> {log} 2>&1  # {SCHEDULE_MARKER}\n")
+
+
+def render_schtasks_create(mode: str, input_dir: Path, glob: str,
+                           interval_min: int, python_exe: str,
+                           muninn_py: Path) -> list[str]:
+    """Pure: render the schtasks /Create argv for Windows."""
+    if mode == "watch":
+        action = (f'"{python_exe}" "{muninn_py}" --watch "{input_dir}" '
+                  f'--watch-glob "{glob}" --upload')
+        return ["schtasks", "/Create", "/TN", WINDOWS_TASK_WATCH,
+                "/TR", action, "/SC", "ONSTART", "/RL", "LIMITED", "/F"]
+    if mode == "periodic":
+        action = f'"{python_exe}" "{muninn_py}" "{input_dir}" --upload'
+        return ["schtasks", "/Create", "/TN", WINDOWS_TASK_PERIODIC,
+                "/TR", action, "/SC", "MINUTE", "/MO", str(interval_min),
+                "/RL", "LIMITED", "/F"]
+    raise ValueError(f"unknown mode: {mode!r}")
+
+
+# ── Installers (write files, run system commands) ──────────────────────────
+
+def install_systemd_user(mode: str, input_dir: Path, glob: str,
+                         interval_min: int) -> int:
+    units = render_systemd_units(mode, input_dir, glob, interval_min,
+                                 _python_exe(), _muninn_script())
+    unit_dir = _systemd_user_dir()
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    service_path = unit_dir / f"{SYSTEMD_SERVICE_NAME}.service"
+    service_path.write_text(units["service"])
+    print(f"[schedule] wrote {service_path}", file=sys.stderr)
+    if units["timer"] is not None:
+        timer_path = unit_dir / f"{SYSTEMD_SERVICE_NAME}.timer"
+        timer_path.write_text(units["timer"])
+        print(f"[schedule] wrote {timer_path}", file=sys.stderr)
+        target = f"{SYSTEMD_SERVICE_NAME}.timer"
+    else:
+        target = f"{SYSTEMD_SERVICE_NAME}.service"
+    for cmd in (["systemctl", "--user", "daemon-reload"],
+                ["systemctl", "--user", "enable", "--now", target]):
+        rc = subprocess.call(cmd)
+        if rc != 0:
+            print(f"[schedule] '{' '.join(cmd)}' returned {rc}", file=sys.stderr)
+            return rc
+    print(f"[schedule] enabled and started {target}", file=sys.stderr)
+    print(f"[schedule] status: systemctl --user status {target}",
+          file=sys.stderr)
+    print(f"[schedule] logs:   journalctl --user -u {target} -f",
+          file=sys.stderr)
+    return 0
+
+
+def uninstall_systemd_user() -> int:
+    unit_dir = _systemd_user_dir()
+    found = False
+    for name in (f"{SYSTEMD_SERVICE_NAME}.timer",
+                 f"{SYSTEMD_SERVICE_NAME}.service"):
+        unit = unit_dir / name
+        if unit.exists():
+            found = True
+            subprocess.call(["systemctl", "--user", "stop", name],
+                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL)
+            subprocess.call(["systemctl", "--user", "disable", name],
+                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL)
+            unit.unlink()
+            print(f"[schedule] removed {unit}", file=sys.stderr)
+    if found:
+        subprocess.call(["systemctl", "--user", "daemon-reload"])
+    else:
+        print("[schedule] no Muninn systemd units found", file=sys.stderr)
+    return 0
+
+
+def install_cron(input_dir: Path, interval_min: int) -> int:
+    if shutil.which("crontab") is None:
+        print("[schedule] crontab not found on PATH", file=sys.stderr)
+        return 1
+    new_line = render_cron_line(input_dir, interval_min,
+                                _python_exe(), _muninn_script())
+    try:
+        r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        current = r.stdout if r.returncode == 0 else ""
+    except FileNotFoundError:
+        return 1
+    cleaned = "\n".join(l for l in current.splitlines()
+                        if SCHEDULE_MARKER not in l)
+    combined = (cleaned.rstrip() + "\n" + new_line) if cleaned.strip() else new_line
+    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE,
+                            text=True)
+    proc.communicate(combined)
+    if proc.returncode != 0:
+        print(f"[schedule] crontab write failed (rc={proc.returncode})",
+              file=sys.stderr)
+        return proc.returncode
+    print(f"[schedule] added cron entry (marker: {SCHEDULE_MARKER})",
+          file=sys.stderr)
+    print(f"[schedule] view: crontab -l", file=sys.stderr)
+    print(f"[schedule] log:  tail -f ~/.muninn-cron.log", file=sys.stderr)
+    return 0
+
+
+def uninstall_cron() -> int:
+    if shutil.which("crontab") is None:
+        return 0
+    try:
+        r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+        if r.returncode != 0:
+            return 0  # no crontab at all — nothing to remove
+        current = r.stdout
+    except FileNotFoundError:
+        return 0
+    cleaned = "\n".join(l for l in current.splitlines()
+                        if SCHEDULE_MARKER not in l)
+    if cleaned == current.rstrip("\n"):
+        print("[schedule] no Muninn cron entries found", file=sys.stderr)
+        return 0
+    proc = subprocess.Popen(["crontab", "-"], stdin=subprocess.PIPE,
+                            text=True)
+    proc.communicate(cleaned)
+    print("[schedule] removed Muninn cron entries", file=sys.stderr)
+    return 0
+
+
+def install_windows_task(mode: str, input_dir: Path, glob: str,
+                         interval_min: int) -> int:
+    cmd = render_schtasks_create(mode, input_dir, glob, interval_min,
+                                 _python_exe(), _muninn_script())
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        return rc
+    name = WINDOWS_TASK_WATCH if mode == "watch" else WINDOWS_TASK_PERIODIC
+    print(f"[schedule] created task: {name}", file=sys.stderr)
+    print(f"[schedule] view: schtasks /Query /TN {name}", file=sys.stderr)
+    print(f"[schedule] run now: schtasks /Run /TN {name}", file=sys.stderr)
+    return 0
+
+
+def uninstall_windows_task() -> int:
+    found = False
+    for name in (WINDOWS_TASK_WATCH, WINDOWS_TASK_PERIODIC):
+        rc = subprocess.call(["schtasks", "/Delete", "/TN", name, "/F"],
+                             stderr=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL)
+        if rc == 0:
+            found = True
+            print(f"[schedule] removed scheduled task: {name}",
+                  file=sys.stderr)
+    if not found:
+        print("[schedule] no Muninn scheduled tasks found", file=sys.stderr)
+    return 0
+
+
+# ── Interactive + headless entry points ────────────────────────────────────
+
+def _prompt_int(label: str, default: int, *, min_val: int = 1,
+                max_val: int = 60) -> int:
+    while True:
+        ans = input(f"{label} [{default}]: ").strip()
+        if not ans:
+            return default
+        try:
+            n = int(ans)
+            if min_val <= n <= max_val:
+                return n
+        except ValueError:
+            pass
+        print(f" enter a number between {min_val} and {max_val}",
+              file=sys.stderr)
+
+
+def _prompt_str(label: str, default: str) -> str:
+    ans = input(f"{label} [{default}]: ").strip()
+    return ans or default
+
+
+def interactive_schedule_setup() -> int:
+    """Walk the user through installing a scheduled Muninn task.
+    Called at the end of --setup (after the API key is saved), and also
+    directly via --schedule."""
+    print("", file=sys.stderr)
+    print("─" * 60, file=sys.stderr)
+    print(" muninn — schedule setup", file=sys.stderr)
+    print("─" * 60, file=sys.stderr)
+    print("", file=sys.stderr)
+    print(" Muninn can run on a schedule and upload new captures",
+          file=sys.stderr)
+    print(" automatically. Point it at your decoder's output folder.",
+          file=sys.stderr)
+    print("", file=sys.stderr)
+    if not _prompt_yes_no(" Set up a schedule now?", default=False):
+        print("", file=sys.stderr)
+        print(" Skipped. You can configure later with:", file=sys.stderr)
+        print("   python3 muninn.py --schedule", file=sys.stderr)
+        print("", file=sys.stderr)
+        return 0
+
+    # Mode choice
+    print("", file=sys.stderr)
+    print(" Two scheduling modes:", file=sys.stderr)
+    print("   1) Live watch — runs in the background, uploads new captures",
+          file=sys.stderr)
+    print("      as soon as they appear. Best for decoders that write a",
+          file=sys.stderr)
+    print("      new file per capture (tar1090 chunks, NDJSON sessions).",
+          file=sys.stderr)
+    print("   2) Periodic — runs every N minutes against the current state.",
+          file=sys.stderr)
+    print("      Best for decoders that rewrite one rolling file in place",
+          file=sys.stderr)
+    print("      (dump1090-fa, readsb, VRS).", file=sys.stderr)
+    print("", file=sys.stderr)
+    while True:
+        ans = input(" Choose [1/2] (default: 1): ").strip()
+        if ans == "" or ans == "1":
+            mode = "watch"
+            break
+        if ans == "2":
+            mode = "periodic"
+            break
+        print(" enter 1 or 2", file=sys.stderr)
+
+    # Input dir
+    candidates = _guess_decoder_dirs()
+    print("", file=sys.stderr)
+    if candidates:
+        print(" Detected likely decoder output folders:", file=sys.stderr)
+        for c in candidates:
+            print(f"   {c}", file=sys.stderr)
+    default_dir = str(candidates[0]) if candidates else ""
+    ans = _prompt_str(" Decoder output folder", default_dir)
+    if not ans:
+        print(" no folder given — cancelling", file=sys.stderr)
+        return 1
+    input_dir = Path(ans).expanduser()
+
+    # Glob
+    default_glob = _guess_glob_for_dir(input_dir)
+    glob = _prompt_str(" File pattern", default_glob)
+
+    # Interval (periodic only)
+    interval_min = 5
+    if mode == "periodic":
+        interval_min = _prompt_int(" How often (minutes)", 5,
+                                   min_val=1, max_val=60)
+
+    # Show preview + confirm
+    mech = _schedule_mechanism()
+    if mech == "cron" and mode == "watch":
+        print("", file=sys.stderr)
+        print(" cron can't run a long-lived watch daemon. Either install",
+              file=sys.stderr)
+        print(" systemd on this host or pick periodic mode. For now,",
+              file=sys.stderr)
+        print(" the watch command you can run yourself is:", file=sys.stderr)
+        print(f"   {_python_exe()} {_muninn_script()} --watch {input_dir} "
+              f"--watch-glob {glob!r} --upload", file=sys.stderr)
+        return 1
+
+    print("", file=sys.stderr)
+    print("─" * 60, file=sys.stderr)
+    print(" The following will be installed:", file=sys.stderr)
+    print("─" * 60, file=sys.stderr)
+    if mech == "systemd":
+        units = render_systemd_units(mode, input_dir, glob, interval_min,
+                                     _python_exe(), _muninn_script())
+        unit_dir = _systemd_user_dir()
+        print("", file=sys.stderr)
+        print(f" {unit_dir}/{SYSTEMD_SERVICE_NAME}.service:", file=sys.stderr)
+        print(textwrap.indent(units["service"], "   "), file=sys.stderr)
+        if units["timer"] is not None:
+            print(f" {unit_dir}/{SYSTEMD_SERVICE_NAME}.timer:",
+                  file=sys.stderr)
+            print(textwrap.indent(units["timer"], "   "), file=sys.stderr)
+        print(" Plus: systemctl --user daemon-reload && enable --now",
+              file=sys.stderr)
+    elif mech == "cron":
+        line = render_cron_line(input_dir, interval_min,
+                                _python_exe(), _muninn_script())
+        print("", file=sys.stderr)
+        print(" Appended to your user crontab:", file=sys.stderr)
+        print(textwrap.indent(line, "   "), file=sys.stderr)
+    elif mech == "windows":
+        cmd = render_schtasks_create(mode, input_dir, glob, interval_min,
+                                     _python_exe(), _muninn_script())
+        print("", file=sys.stderr)
+        print(" schtasks command:", file=sys.stderr)
+        print(f"   {' '.join(cmd)}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    if not _prompt_yes_no(" Install now?", default=True):
+        print("", file=sys.stderr)
+        print(" Skipped. To install non-interactively later:",
+              file=sys.stderr)
+        print(f"   python3 muninn.py --schedule --schedule-mode {mode} "
+              f"--schedule-input {input_dir} "
+              f"--schedule-glob {glob!r} "
+              f"--schedule-interval {interval_min}", file=sys.stderr)
+        return 0
+
+    if mech == "systemd":
+        rc = install_systemd_user(mode, input_dir, glob, interval_min)
+    elif mech == "cron":
+        rc = install_cron(input_dir, interval_min)
+    elif mech == "windows":
+        rc = install_windows_task(mode, input_dir, glob, interval_min)
+    else:
+        rc = 1
+
+    if rc == 0:
+        print("", file=sys.stderr)
+        print(" ✓ Schedule installed. To remove later:", file=sys.stderr)
+        print("   python3 muninn.py --unschedule", file=sys.stderr)
+        print("", file=sys.stderr)
+    return rc
+
+
+def cmd_schedule_headless(args) -> int:
+    """Headless --schedule path. Reads mode/input/glob/interval from args."""
+    mode = args.schedule_mode or "watch"
+    if mode not in ("watch", "periodic"):
+        sys.exit(f"--schedule-mode must be 'watch' or 'periodic', got {mode!r}")
+    if not args.schedule_input:
+        sys.exit("--schedule requires --schedule-input <dir>")
+    input_dir = Path(args.schedule_input).expanduser()
+    glob = args.schedule_glob or _guess_glob_for_dir(input_dir)
+    interval_min = args.schedule_interval or 5
+    mech = _schedule_mechanism()
+    if mech == "cron" and mode == "watch":
+        sys.exit("cron can't run watch mode. Either pick --schedule-mode "
+                 "periodic, or run muninn.py --watch ... in a terminal.")
+    if mech == "systemd":
+        return install_systemd_user(mode, input_dir, glob, interval_min)
+    if mech == "cron":
+        return install_cron(input_dir, interval_min)
+    if mech == "windows":
+        return install_windows_task(mode, input_dir, glob, interval_min)
+    sys.exit(f"unsupported platform: {sys.platform}")
+
+
+def cmd_unschedule() -> int:
+    """Remove every Muninn-managed schedule entry on this platform."""
+    mech = _schedule_mechanism()
+    rcs = []
+    # Always try all three on Linux — user may have moved between cron
+    # and systemd between installs.
+    if sys.platform == "win32":
+        rcs.append(uninstall_windows_task())
+    else:
+        if _has_systemd():
+            rcs.append(uninstall_systemd_user())
+        rcs.append(uninstall_cron())
+    return 0 if all(rc == 0 for rc in rcs) else 1
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
     """Decode a single capture file and write its JSON output.
@@ -1927,6 +2465,25 @@ def main() -> int:
     ap.add_argument("--whoami", action="store_true",
                     help="validate your stored API key by hitting /api/me and "
                          "showing your account stats; exits after.")
+    ap.add_argument("--schedule", action="store_true",
+                    help="install or reconfigure a scheduled Muninn task. "
+                         "Interactive when run alone; with --schedule-mode "
+                         "+ --schedule-input + (--schedule-glob + "
+                         "--schedule-interval) runs headless.")
+    ap.add_argument("--unschedule", action="store_true",
+                    help="remove every Muninn-managed scheduled task on "
+                         "this host (systemd user units, cron entries, "
+                         "Windows scheduled tasks).")
+    ap.add_argument("--schedule-mode", choices=["watch", "periodic"],
+                    help="for --schedule headless mode")
+    ap.add_argument("--schedule-input", metavar="DIR",
+                    help="decoder output dir (used by --schedule headless mode)")
+    ap.add_argument("--schedule-glob", metavar="PATTERN",
+                    help="file pattern in --schedule-input (default: "
+                         "best-guess based on directory contents)")
+    ap.add_argument("--schedule-interval", type=int, metavar="MINUTES",
+                    help="for --schedule-mode periodic: minutes between "
+                         "ticks (default: 5)")
     ap.add_argument("--watch", action="store_true",
                     help="watch the input as a directory and process new "
                          "files as they appear (loops until Ctrl+C)")
@@ -2029,6 +2586,17 @@ def main() -> int:
     if args.save_key:
         save_key(args.save_key)
         return 0
+    if args.unschedule:
+        return cmd_unschedule()
+    if args.schedule:
+        # If any headless arg is provided, run headless; else interactive.
+        headless = (args.schedule_mode is not None
+                    or args.schedule_input is not None
+                    or args.schedule_glob is not None
+                    or args.schedule_interval is not None)
+        if headless:
+            return cmd_schedule_headless(args)
+        return interactive_schedule_setup()
     if args.whoami:
         key = load_key(args.key)
         if not key:
