@@ -4,7 +4,7 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [2.0.9] - 2026-06-01 - Scheduling in --setup (watch + periodic)
+## [2.0.9] - 2026-06-01 - Scheduling in --setup (watch + periodic, dry-run)
 
 `muninn.py --setup` now offers a second optional step after saving the
 API key: install a scheduled task that uploads new captures automatically.
@@ -38,7 +38,14 @@ user's system — no silent mutations.
 
 - `--schedule` flag: interactive when run alone, headless when passed
   `--schedule-mode {watch,periodic}` + `--schedule-input <dir>`
-  (+ optional `--schedule-glob` and `--schedule-interval`).
+  (+ optional `--schedule-glob`, `--schedule-interval`, `--schedule-dry-run`).
+- `--schedule-dry-run` flag: bakes `--dry-run` into the installed
+  unit's ExecStart / cron line / schtasks action. Decodes + logs but
+  never POSTs to wdgwars.pl. Lets the user verify the install
+  end-to-end (file detected → decoded → JSON written → logged)
+  before flipping to live uploads. Re-run `--schedule` without this
+  flag (or answer No to the interactive dry-run prompt) to flip live.
+  Interactive flow defaults dry-run to **yes** for safety.
 - `--unschedule` flag: removes every Muninn-managed scheduled task on
   this host (systemd user units, marked cron entries, Windows scheduled
   tasks). Idempotent — safe to run when nothing is installed.

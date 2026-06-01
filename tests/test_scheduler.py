@@ -181,6 +181,73 @@ class SchtasksRendererTests(unittest.TestCase):
                 "nonsense", self.INPUTW, self.GLOBW, 5, self.PYW, self.SCRIPTW)
 
 
+class DryRunRendererTests(unittest.TestCase):
+    """The --dry-run flag must appear in every install variant when
+    dry_run=True. When False, --dry-run must NOT leak in."""
+
+    PYW = r"C:\Python311\python.exe"
+    SCRIPTW = Path(r"C:\Tools\adsb-to-wdgwars\muninn.py")
+
+    def test_systemd_watch_dry_run_appends_flag(self):
+        units = muninn.render_systemd_units(
+            "watch", INPUT, GLOB, 5, PY, SCRIPT, dry_run=True)
+        self.assertIn("--dry-run", units["service"])
+        self.assertIn("[DRY-RUN]", units["service"])
+
+    def test_systemd_watch_no_dry_run_no_flag(self):
+        units = muninn.render_systemd_units(
+            "watch", INPUT, GLOB, 5, PY, SCRIPT, dry_run=False)
+        self.assertNotIn("--dry-run", units["service"])
+        self.assertNotIn("[DRY-RUN]", units["service"])
+
+    def test_systemd_periodic_dry_run(self):
+        units = muninn.render_systemd_units(
+            "periodic", INPUT, GLOB, 5, PY, SCRIPT, dry_run=True)
+        self.assertIn("--dry-run", units["service"])
+        # Timer doesn't carry the dry-run flag — only the service does
+        self.assertNotIn("--dry-run", units["timer"])
+
+    def test_systemd_default_no_dry_run(self):
+        # Backwards-compat: existing callers passing no dry_run kwarg
+        # get the original behavior (no flag).
+        units = muninn.render_systemd_units(
+            "watch", INPUT, GLOB, 5, PY, SCRIPT)
+        self.assertNotIn("--dry-run", units["service"])
+
+    def test_cron_dry_run(self):
+        line = muninn.render_cron_line(INPUT, 5, PY, SCRIPT, dry_run=True)
+        self.assertIn("--upload --dry-run", line)
+
+    def test_cron_no_dry_run(self):
+        line = muninn.render_cron_line(INPUT, 5, PY, SCRIPT, dry_run=False)
+        self.assertNotIn("--dry-run", line)
+
+    def test_schtasks_watch_dry_run(self):
+        cmd = muninn.render_schtasks_create(
+            "watch", Path(r"C:\dump1090"), "aircraft.json", 5,
+            self.PYW, self.SCRIPTW, dry_run=True)
+        # Action is one of the elements after /TR
+        i = cmd.index("/TR")
+        action = cmd[i + 1]
+        self.assertIn("--dry-run", action)
+
+    def test_schtasks_periodic_dry_run(self):
+        cmd = muninn.render_schtasks_create(
+            "periodic", Path(r"C:\dump1090"), "aircraft.json", 5,
+            self.PYW, self.SCRIPTW, dry_run=True)
+        i = cmd.index("/TR")
+        action = cmd[i + 1]
+        self.assertIn("--upload --dry-run", action)
+
+    def test_schtasks_no_dry_run(self):
+        cmd = muninn.render_schtasks_create(
+            "periodic", Path(r"C:\dump1090"), "aircraft.json", 5,
+            self.PYW, self.SCRIPTW, dry_run=False)
+        i = cmd.index("/TR")
+        action = cmd[i + 1]
+        self.assertNotIn("--dry-run", action)
+
+
 class GuessGlobTests(unittest.TestCase):
 
     def test_returns_aircraft_json_default(self):

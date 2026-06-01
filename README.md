@@ -235,6 +235,10 @@ python3 muninn.py --schedule \
   --schedule-interval 5
 ```
 
+### Dry-run first
+
+The interactive flow defaults dry-run to **yes** — the installed task runs `--dry-run`, which decodes and writes JSON but doesn't actually POST to wdgwars.pl. Useful for verifying the install before any data lands on your account. Once you confirm the scheduled task is picking up files correctly, re-run `--schedule` and answer No to the dry-run prompt to flip to live uploads. The headless equivalent is `--schedule-dry-run`.
+
 Verify and tail logs (Linux/systemd example):
 
 ```bash

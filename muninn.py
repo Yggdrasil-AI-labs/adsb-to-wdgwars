@@ -1706,16 +1706,23 @@ def _schedule_mechanism() -> str:
 
 def render_systemd_units(mode: str, input_dir: Path, glob: str,
                          interval_min: int, python_exe: str,
-                         muninn_py: Path) -> dict[str, str | None]:
+                         muninn_py: Path,
+                         dry_run: bool = False) -> dict[str, str | None]:
     """Pure: render systemd unit text for the chosen mode.
 
     Returns {"service": str, "timer": str | None}. Timer is None for
     watch mode (long-running service needs no timer).
+
+    When dry_run=True, --dry-run is baked into ExecStart so the
+    installed unit decodes + writes JSON but never POSTs to wdgwars.pl.
+    Lets a user verify the install end-to-end before flipping to live.
     """
+    dry = " --dry-run" if dry_run else ""
+    desc_suffix = " [DRY-RUN]" if dry_run else ""
     if mode == "watch":
         service = (
             "[Unit]\n"
-            "Description=Muninn ADS-B watch+upload\n"
+            f"Description=Muninn ADS-B watch+upload{desc_suffix}\n"
             f"# {SCHEDULE_MARKER}\n"
             "After=network-online.target\n"
             "Wants=network-online.target\n"
@@ -1723,7 +1730,7 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
             "[Service]\n"
             "Type=simple\n"
             f"ExecStart={python_exe} {muninn_py} --watch {input_dir} "
-            f"--watch-glob {glob!r} --upload\n"
+            f"--watch-glob {glob!r} --upload{dry}\n"
             "Restart=on-failure\n"
             "RestartSec=10s\n"
             "\n"
@@ -1734,12 +1741,12 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
     if mode == "periodic":
         service = (
             "[Unit]\n"
-            "Description=Muninn ADS-B upload (one-shot)\n"
+            f"Description=Muninn ADS-B upload (one-shot){desc_suffix}\n"
             f"# {SCHEDULE_MARKER}\n"
             "\n"
             "[Service]\n"
             "Type=oneshot\n"
-            f"ExecStart={python_exe} {muninn_py} {input_dir} --upload\n"
+            f"ExecStart={python_exe} {muninn_py} {input_dir} --upload{dry}\n"
         )
         timer = (
             "[Unit]\n"
@@ -1759,26 +1766,31 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
 
 
 def render_cron_line(input_dir: Path, interval_min: int,
-                     python_exe: str, muninn_py: Path) -> str:
+                     python_exe: str, muninn_py: Path,
+                     dry_run: bool = False) -> str:
     """Pure: render a cron line for periodic mode. Watch mode isn't
     supported on cron (cron can't run daemons)."""
     cron_min = "*" if interval_min == 1 else f"*/{interval_min}"
     log = "$HOME/.muninn-cron.log"
+    dry = " --dry-run" if dry_run else ""
     return (f"{cron_min} * * * * {python_exe} {muninn_py} {input_dir} "
-            f"--upload >> {log} 2>&1  # {SCHEDULE_MARKER}\n")
+            f"--upload{dry} >> {log} 2>&1  # {SCHEDULE_MARKER}\n")
 
 
 def render_schtasks_create(mode: str, input_dir: Path, glob: str,
                            interval_min: int, python_exe: str,
-                           muninn_py: Path) -> list[str]:
+                           muninn_py: Path,
+                           dry_run: bool = False) -> list[str]:
     """Pure: render the schtasks /Create argv for Windows."""
+    dry = " --dry-run" if dry_run else ""
     if mode == "watch":
         action = (f'"{python_exe}" "{muninn_py}" --watch "{input_dir}" '
-                  f'--watch-glob "{glob}" --upload')
+                  f'--watch-glob "{glob}" --upload{dry}')
         return ["schtasks", "/Create", "/TN", WINDOWS_TASK_WATCH,
                 "/TR", action, "/SC", "ONSTART", "/RL", "LIMITED", "/F"]
     if mode == "periodic":
-        action = f'"{python_exe}" "{muninn_py}" "{input_dir}" --upload'
+        action = (f'"{python_exe}" "{muninn_py}" "{input_dir}" '
+                  f'--upload{dry}')
         return ["schtasks", "/Create", "/TN", WINDOWS_TASK_PERIODIC,
                 "/TR", action, "/SC", "MINUTE", "/MO", str(interval_min),
                 "/RL", "LIMITED", "/F"]
@@ -1788,9 +1800,10 @@ def render_schtasks_create(mode: str, input_dir: Path, glob: str,
 # ── Installers (write files, run system commands) ──────────────────────────
 
 def install_systemd_user(mode: str, input_dir: Path, glob: str,
-                         interval_min: int) -> int:
+                         interval_min: int, dry_run: bool = False) -> int:
     units = render_systemd_units(mode, input_dir, glob, interval_min,
-                                 _python_exe(), _muninn_script())
+                                 _python_exe(), _muninn_script(),
+                                 dry_run=dry_run)
     unit_dir = _systemd_user_dir()
     unit_dir.mkdir(parents=True, exist_ok=True)
     service_path = unit_dir / f"{SYSTEMD_SERVICE_NAME}.service"
@@ -1840,12 +1853,14 @@ def uninstall_systemd_user() -> int:
     return 0
 
 
-def install_cron(input_dir: Path, interval_min: int) -> int:
+def install_cron(input_dir: Path, interval_min: int,
+                 dry_run: bool = False) -> int:
     if shutil.which("crontab") is None:
         print("[schedule] crontab not found on PATH", file=sys.stderr)
         return 1
     new_line = render_cron_line(input_dir, interval_min,
-                                _python_exe(), _muninn_script())
+                                _python_exe(), _muninn_script(),
+                                dry_run=dry_run)
     try:
         r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         current = r.stdout if r.returncode == 0 else ""
@@ -1891,9 +1906,11 @@ def uninstall_cron() -> int:
 
 
 def install_windows_task(mode: str, input_dir: Path, glob: str,
-                         interval_min: int) -> int:
+                         interval_min: int,
+                         dry_run: bool = False) -> int:
     cmd = render_schtasks_create(mode, input_dir, glob, interval_min,
-                                 _python_exe(), _muninn_script())
+                                 _python_exe(), _muninn_script(),
+                                 dry_run=dry_run)
     rc = subprocess.call(cmd)
     if rc != 0:
         return rc
@@ -2012,6 +2029,15 @@ def interactive_schedule_setup() -> int:
         interval_min = _prompt_int(" How often (minutes)", 5,
                                    min_val=1, max_val=60)
 
+    # Dry-run prompt — default Yes for safety. Dry-run installs the unit
+    # with --dry-run baked into ExecStart so the user can verify the
+    # decode/log pipeline before flipping to live uploads.
+    print("", file=sys.stderr)
+    print(" Install in dry-run first? (no uploads — decodes + logs only;",
+          file=sys.stderr)
+    print(" re-run --schedule later to flip to live)", file=sys.stderr)
+    dry_run = _prompt_yes_no(" Dry-run mode?", default=True)
+
     # Show preview + confirm
     mech = _schedule_mechanism()
     if mech == "cron" and mode == "watch":
@@ -2031,7 +2057,8 @@ def interactive_schedule_setup() -> int:
     print("─" * 60, file=sys.stderr)
     if mech == "systemd":
         units = render_systemd_units(mode, input_dir, glob, interval_min,
-                                     _python_exe(), _muninn_script())
+                                     _python_exe(), _muninn_script(),
+                                     dry_run=dry_run)
         unit_dir = _systemd_user_dir()
         print("", file=sys.stderr)
         print(f" {unit_dir}/{SYSTEMD_SERVICE_NAME}.service:", file=sys.stderr)
@@ -2044,41 +2071,64 @@ def interactive_schedule_setup() -> int:
               file=sys.stderr)
     elif mech == "cron":
         line = render_cron_line(input_dir, interval_min,
-                                _python_exe(), _muninn_script())
+                                _python_exe(), _muninn_script(),
+                                dry_run=dry_run)
         print("", file=sys.stderr)
         print(" Appended to your user crontab:", file=sys.stderr)
         print(textwrap.indent(line, "   "), file=sys.stderr)
     elif mech == "windows":
         cmd = render_schtasks_create(mode, input_dir, glob, interval_min,
-                                     _python_exe(), _muninn_script())
+                                     _python_exe(), _muninn_script(),
+                                     dry_run=dry_run)
         print("", file=sys.stderr)
         print(" schtasks command:", file=sys.stderr)
         print(f"   {' '.join(cmd)}", file=sys.stderr)
+    if dry_run:
+        print("", file=sys.stderr)
+        print(" *** DRY-RUN: --dry-run flag is in ExecStart, no real",
+              file=sys.stderr)
+        print(" *** uploads will happen. Re-run --schedule (answer No",
+              file=sys.stderr)
+        print(" *** to dry-run) to flip to live uploads.", file=sys.stderr)
     print("", file=sys.stderr)
 
     if not _prompt_yes_no(" Install now?", default=True):
         print("", file=sys.stderr)
         print(" Skipped. To install non-interactively later:",
               file=sys.stderr)
+        dry_flag = " --schedule-dry-run" if dry_run else ""
         print(f"   python3 muninn.py --schedule --schedule-mode {mode} "
               f"--schedule-input {input_dir} "
               f"--schedule-glob {glob!r} "
-              f"--schedule-interval {interval_min}", file=sys.stderr)
+              f"--schedule-interval {interval_min}{dry_flag}",
+              file=sys.stderr)
         return 0
 
     if mech == "systemd":
-        rc = install_systemd_user(mode, input_dir, glob, interval_min)
+        rc = install_systemd_user(mode, input_dir, glob, interval_min,
+                                  dry_run=dry_run)
     elif mech == "cron":
-        rc = install_cron(input_dir, interval_min)
+        rc = install_cron(input_dir, interval_min, dry_run=dry_run)
     elif mech == "windows":
-        rc = install_windows_task(mode, input_dir, glob, interval_min)
+        rc = install_windows_task(mode, input_dir, glob, interval_min,
+                                  dry_run=dry_run)
     else:
         rc = 1
 
     if rc == 0:
         print("", file=sys.stderr)
-        print(" ✓ Schedule installed. To remove later:", file=sys.stderr)
-        print("   python3 muninn.py --unschedule", file=sys.stderr)
+        if dry_run:
+            print(" ✓ Schedule installed in DRY-RUN mode (no uploads).",
+                  file=sys.stderr)
+            print("   Verify it works, then re-run --schedule and",
+                  file=sys.stderr)
+            print("   answer 'no' to the dry-run prompt to go live.",
+                  file=sys.stderr)
+        else:
+            print(" ✓ Schedule installed (live uploads enabled).",
+                  file=sys.stderr)
+        print(" To remove later: python3 muninn.py --unschedule",
+              file=sys.stderr)
         print("", file=sys.stderr)
     return rc
 
@@ -2093,16 +2143,19 @@ def cmd_schedule_headless(args) -> int:
     input_dir = Path(args.schedule_input).expanduser()
     glob = args.schedule_glob or _guess_glob_for_dir(input_dir)
     interval_min = args.schedule_interval or 5
+    dry_run = bool(args.schedule_dry_run)
     mech = _schedule_mechanism()
     if mech == "cron" and mode == "watch":
         sys.exit("cron can't run watch mode. Either pick --schedule-mode "
                  "periodic, or run muninn.py --watch ... in a terminal.")
     if mech == "systemd":
-        return install_systemd_user(mode, input_dir, glob, interval_min)
+        return install_systemd_user(mode, input_dir, glob, interval_min,
+                                    dry_run=dry_run)
     if mech == "cron":
-        return install_cron(input_dir, interval_min)
+        return install_cron(input_dir, interval_min, dry_run=dry_run)
     if mech == "windows":
-        return install_windows_task(mode, input_dir, glob, interval_min)
+        return install_windows_task(mode, input_dir, glob, interval_min,
+                                    dry_run=dry_run)
     sys.exit(f"unsupported platform: {sys.platform}")
 
 
@@ -2484,6 +2537,12 @@ def main() -> int:
     ap.add_argument("--schedule-interval", type=int, metavar="MINUTES",
                     help="for --schedule-mode periodic: minutes between "
                          "ticks (default: 5)")
+    ap.add_argument("--schedule-dry-run", action="store_true",
+                    help="install the schedule with --dry-run baked into "
+                         "the unit/cron/task. Decodes + logs but never "
+                         "uploads. Lets you verify the install before "
+                         "flipping to live. Re-run --schedule without "
+                         "this flag to go live.")
     ap.add_argument("--watch", action="store_true",
                     help="watch the input as a directory and process new "
                          "files as they appear (loops until Ctrl+C)")
@@ -2593,7 +2652,8 @@ def main() -> int:
         headless = (args.schedule_mode is not None
                     or args.schedule_input is not None
                     or args.schedule_glob is not None
-                    or args.schedule_interval is not None)
+                    or args.schedule_interval is not None
+                    or args.schedule_dry_run)
         if headless:
             return cmd_schedule_headless(args)
         return interactive_schedule_setup()
