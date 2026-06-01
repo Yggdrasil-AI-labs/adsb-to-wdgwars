@@ -4,6 +4,31 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.10] - 2026-06-01 - --preview flag (parser dry-run, cross-tool consistency)
+
+Adds `--preview` to Muninn. Parses the input, prints up to 6 normalised
+records as JSON-lines on stdout, then exits. No file write, no upload.
+
+Mirrors Heimdall's `--preview` exactly so muscle memory transfers across
+the feeder family. A Pi24 user tried `muninn.py ... --preview` earlier
+today after using Heimdall and got `unrecognized arguments` — easy fix.
+
+### Added
+
+- `--preview` flag: parses + prints first 6 normalised records + exits.
+- 6 new tests in `tests/test_preview.py` covering: zero exit, no file
+  write, exactly-6 cap, JSON validity, fewer-than-6 padding, CLI help
+  visibility.
+
+### Unchanged
+
+- `--stdout` (full JSON dump to stdout) — still works, still distinct
+  from `--preview`. Use `--preview` to confirm parsing; `--stdout` to
+  capture the full converted payload.
+- `--upload --dry-run` — still the right combo for testing the upload
+  pipeline without POSTing. `--preview` skips the upload pipeline entirely.
+- All v2.0.9 scheduler behavior, --schedule flags, --schedule-dry-run.
+
 ## [2.0.9] - 2026-06-01 - Scheduling in --setup (watch + periodic, dry-run)
 
 `muninn.py --setup` now offers a second optional step after saving the
