@@ -26,7 +26,26 @@ jobs:
         run: python -m pip install --upgrade -r requirements.txt
 
       - name: Run unit tests
+        # CI runners never have a real WDGoWars key, so the live-key
+        # safety guard is a no-op here. Setting the env var anyway makes
+        # the intent explicit in case CI is ever swapped to self-hosted.
+        env:
+          MUNINN_TEST_ALLOW_LIVE_KEY: "1"
         run: python -m unittest discover -s tests -v
+
+      - name: Lint README examples
+        # Catches README code blocks that drift away from the venv-aware
+        # invocation pattern (post-v2.0.8). Adds ~1s to CI.
+        run: python scripts/check_readme_examples.py README.md
+
+      - name: Smoke (full pre-release sanity)
+        # Only on Python 3.12 — running it on every matrix entry would
+        # triple CI time for no extra signal (the smoke script itself
+        # doesn't care which interpreter, it spawns its own venv).
+        if: matrix.python-version == '3.12'
+        env:
+          MUNINN_TEST_ALLOW_LIVE_KEY: "1"
+        run: bash scripts/smoke.sh
 
       - name: Smoke-test CLI (--version, --help)
         run: |
