@@ -100,7 +100,37 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-import gungnir
+try:
+    import gungnir
+except ModuleNotFoundError:
+    # Post-v2.0.8 footgun: deps live in `.venv/` next to this script.
+    # `python3 muninn.py ...` from system Python won't find them. Detect
+    # that case and point the user at the venv / run.sh instead of the
+    # bare traceback that just says "No module named 'gungnir'".
+    import sys as _sys
+    from pathlib import Path as _Path
+    _script_dir = _Path(__file__).resolve().parent
+    _venv_py = _script_dir / ".venv" / "bin" / "python"
+    if not _venv_py.exists():
+        _venv_py = _script_dir / ".venv" / "Scripts" / "python.exe"
+    if _venv_py.exists():
+        print(
+            "\n[muninn] missing dependency: gungnir.\n"
+            "[muninn] deps live in the project venv, not system Python.\n"
+            "[muninn] re-run with the venv interpreter, or use the run.sh "
+            "wrapper:\n"
+            f"[muninn]   {_venv_py} muninn.py ...\n"
+            "[muninn]   ./run.sh ...\n",
+            file=_sys.stderr,
+        )
+    else:
+        print(
+            "\n[muninn] missing dependency: gungnir.\n"
+            "[muninn] run ./setup.sh (or python3 -m pip install -r "
+            "requirements.txt in a venv) to install it.\n",
+            file=_sys.stderr,
+        )
+    _sys.exit(1)
 
 # Muninn is a CLI tool — configure logging so cron logs look like they
 # did in v1.x (plain-message-per-line to stderr). Library users who set
@@ -1806,6 +1836,25 @@ def install_systemd_user(mode: str, input_dir: Path, glob: str,
                                  dry_run=dry_run)
     unit_dir = _systemd_user_dir()
     unit_dir.mkdir(parents=True, exist_ok=True)
+    # Mode switch hygiene: tear down the unit-type we're NOT using this
+    # round, so switching periodic -> watch doesn't leave an orphan timer
+    # firing into the long-lived watch service (which would interrupt it
+    # every N minutes). Symmetric on watch -> periodic — but in that case
+    # the .timer didn't exist before, so the stop/disable on .service
+    # below is the only one that matters.
+    if mode == "watch":
+        stale = f"{SYSTEMD_SERVICE_NAME}.timer"
+        stale_path = unit_dir / stale
+        if stale_path.exists():
+            subprocess.call(["systemctl", "--user", "stop", stale],
+                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL)
+            subprocess.call(["systemctl", "--user", "disable", stale],
+                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL)
+            stale_path.unlink()
+            print(f"[schedule] removed orphan {stale_path}",
+                  file=sys.stderr)
     service_path = unit_dir / f"{SYSTEMD_SERVICE_NAME}.service"
     service_path.write_text(units["service"])
     print(f"[schedule] wrote {service_path}", file=sys.stderr)
@@ -1814,6 +1863,14 @@ def install_systemd_user(mode: str, input_dir: Path, glob: str,
         timer_path.write_text(units["timer"])
         print(f"[schedule] wrote {timer_path}", file=sys.stderr)
         target = f"{SYSTEMD_SERVICE_NAME}.timer"
+        # When switching to periodic mode, the .service shouldn't be
+        # directly activated by default.target (it should be triggered
+        # by the timer instead). Disable the .service's WantedBy=default.target
+        # symlink if a previous watch install enabled it.
+        subprocess.call(["systemctl", "--user", "disable",
+                         f"{SYSTEMD_SERVICE_NAME}.service"],
+                        stderr=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL)
     else:
         target = f"{SYSTEMD_SERVICE_NAME}.service"
     for cmd in (["systemctl", "--user", "daemon-reload"],
