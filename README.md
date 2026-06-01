@@ -12,6 +12,15 @@
 
 Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRadarServer, Stratux, Mode-S Beast, RTL-SDR, RTL1090, PortaPack Mayhem, GDL-90 cockpit receivers) to WDGoWars-compatible JSON and optionally upload them. Auto-detects 13 input dialects and decompresses gzipped chunks transparently.
 
+## Family
+
+Sibling repos in the WDGoWars feeder family:
+
+- [Heimdall](https://github.com/HiroAlleyCat/meshcore-to-wdgwars) — MeshCore LoRa feeder
+- [wigle-to-wdgwars](https://github.com/HiroAlleyCat/wigle-to-wdgwars) — WiGLE Wi-Fi/BLE feeder
+- [gungnir](https://github.com/HiroAlleyCat/gungnir) — shared HMAC transport library
+- [wdgwars-api-tester](https://github.com/HiroAlleyCat/wdgwars-api-tester) — API surface probe
+
 > **Linked by WDGoWars as the recommended advanced converter.** The
 > WDGoWars portal includes a native importer for the common JSON
 > dialects (dump1090 / readsb / tar1090 / Stratux / VRS / Sleipnir)
