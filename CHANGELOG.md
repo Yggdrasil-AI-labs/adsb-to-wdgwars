@@ -4,6 +4,75 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.9] - 2026-06-01 - Scheduling in --setup (watch + periodic, dry-run)
+
+`muninn.py --setup` now offers a second optional step after saving the
+API key: install a scheduled task that uploads new captures automatically.
+Two modes:
+
+- **Watch.** Long-running daemon that uploads new files as soon as they
+  appear in the decoder's output folder. Best for decoders that write
+  a new file per capture session (tar1090 chunks, NDJSON sessions).
+- **Periodic.** Every N minutes (configurable, 1–60), Muninn scans the
+  folder and uploads. Best for decoders that rewrite a single rolling
+  file in place (dump1090-fa, readsb, VRS).
+
+Per-platform mechanism (user-scope only — no sudo):
+
+- **Linux with systemd:** writes `muninn-upload.service` (+ `.timer` for
+  periodic mode) to `~/.config/systemd/user/`, runs `daemon-reload` +
+  `enable --now`. Survives reboots, journald handles logging, `Restart=on-failure`
+  keeps watch mode alive across transient errors.
+- **macOS / Linux without systemd:** appends a user-crontab entry with a
+  `managed-by-muninn` marker comment. Periodic only — cron can't run
+  daemons, so watch mode falls back to a printed command for manual
+  invocation.
+- **Windows:** `schtasks /Create` at user scope. `/SC ONSTART` for watch
+  mode, `/SC MINUTE /MO N` for periodic.
+
+The interactive flow shows the exact unit / cron line / schtasks command
+that will be installed and asks **"Install now?"** before touching the
+user's system — no silent mutations.
+
+### Added
+
+- `--schedule` flag: interactive when run alone, headless when passed
+  `--schedule-mode {watch,periodic}` + `--schedule-input <dir>`
+  (+ optional `--schedule-glob`, `--schedule-interval`, `--schedule-dry-run`).
+- `--schedule-dry-run` flag: bakes `--dry-run` into the installed
+  unit's ExecStart / cron line / schtasks action. Decodes + logs but
+  never POSTs to wdgwars.pl. Lets the user verify the install
+  end-to-end (file detected → decoded → JSON written → logged)
+  before flipping to live uploads. Re-run `--schedule` without this
+  flag (or answer No to the interactive dry-run prompt) to flip live.
+  Interactive flow defaults dry-run to **yes** for safety.
+- `--unschedule` flag: removes every Muninn-managed scheduled task on
+  this host (systemd user units, marked cron entries, Windows scheduled
+  tasks). Idempotent — safe to run when nothing is installed.
+- New section in `interactive_setup()` that calls `interactive_schedule_setup()`
+  after the API key is saved. Schedule setup defaults to "No" so existing
+  users who just want their key saved aren't pushed into anything.
+- `_guess_decoder_dirs()` auto-detects common decoder output paths
+  (`/run/dump1090-fa`, `/run/readsb`, etc.) and offers them as defaults.
+- `_guess_glob_for_dir()` picks a sensible file pattern based on what's
+  in the chosen folder (`aircraft.json` for live decoders, `chunk_*.json.gz`
+  for tar1090, `*.ndjson.gz` if any are present).
+
+### Pure renderers, side-effect-free
+
+The unit / cron / schtasks generators are pure functions (input →
+string / argv list, no I/O). New `tests/test_scheduler.py` covers them
+in isolation — 23 tests, no live mutations. The installers that wrap
+them are exercised live during release verification.
+
+### Verified live on Ubuntu 24.04 (systemd)
+
+- Periodic install: unit + timer written, daemon-reloaded, enabled, active.
+- Watch install: long-running service, `Restart=on-failure`, active.
+- Uninstall: both modes cleanly removed, no orphan files, no orphan
+  enables.
+- Idempotency: re-running install replaces existing unit cleanly.
+
 ## [2.0.8] - 2026-06-01 - setup.sh: PEP 668 / Bookworm fix
 
 `setup.sh`, `run.sh`, and `update.sh` now install Muninn into a
