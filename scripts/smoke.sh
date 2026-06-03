@@ -48,7 +48,13 @@ if ! python3 -m venv "$TMP_DIR/venv" > "$TMP_DIR/venv.log" 2>&1; then
     cat "$TMP_DIR/venv.log" >&2
     fail "venv create (is python3-venv installed?)"
 fi
-VENV_PY="$TMP_DIR/venv/bin/python"
+if [ -x "$TMP_DIR/venv/bin/python" ]; then
+    VENV_PY="$TMP_DIR/venv/bin/python"
+elif [ -x "$TMP_DIR/venv/Scripts/python.exe" ]; then
+    VENV_PY="$TMP_DIR/venv/Scripts/python.exe"
+else
+    fail "could not find venv python interpreter under $TMP_DIR/venv/"
+fi
 say "installing pinned deps into venv..."
 if ! "$VENV_PY" -m pip install -q -r requirements.txt \
         > "$TMP_DIR/pip.log" 2>&1; then
@@ -78,28 +84,38 @@ ok "--version + --help"
 # ─── 5. --schedule headless validation: write unit file to a temp XDG
 #       and assert its content. No systemctl interaction (which would
 #       need the live user manager). Just renderer round-trip.
-say "rendering systemd unit (no install) — XDG-isolated..."
-export XDG_CONFIG_HOME="$TMP_DIR/xdg"
-mkdir -p "$XDG_CONFIG_HOME"
-mkdir -p "$TMP_DIR/captures"
-# Run muninn's headless --schedule but suppress systemctl errors —
-# the unit file write happens BEFORE the systemctl call, so we get
-# the artifact even when systemctl can't find our XDG path.
-"$VENV_PY" muninn.py --schedule --schedule-mode watch \
-    --schedule-input "$TMP_DIR/captures" --schedule-glob 'aircraft.json' \
-    --schedule-dry-run > "$TMP_DIR/sched.log" 2>&1 || true
-UNIT="$XDG_CONFIG_HOME/systemd/user/muninn-upload.service"
-if [ ! -f "$UNIT" ]; then
-    cat "$TMP_DIR/sched.log" >&2
-    fail "no unit file written to $UNIT"
+#
+# Linux-with-systemd only. macOS gets cron and Windows gets schtasks,
+# both of which need different assertions and (in the Windows case)
+# bump into the schtasks /TR 261-char cap when the temp dir path is
+# long. CI runs Linux, so we focus there. Aligned with wigle's gate.
+if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1 \
+        && [ -d /run/systemd/system ]; then
+    say "rendering systemd unit (no install) — XDG-isolated..."
+    export XDG_CONFIG_HOME="$TMP_DIR/xdg"
+    mkdir -p "$XDG_CONFIG_HOME"
+    mkdir -p "$TMP_DIR/captures"
+    # Run muninn's headless --schedule but suppress systemctl errors —
+    # the unit file write happens BEFORE the systemctl call, so we get
+    # the artifact even when systemctl can't find our XDG path.
+    "$VENV_PY" muninn.py --schedule --schedule-mode watch \
+        --schedule-input "$TMP_DIR/captures" --schedule-glob 'aircraft.json' \
+        --schedule-dry-run > "$TMP_DIR/sched.log" 2>&1 || true
+    UNIT="$XDG_CONFIG_HOME/systemd/user/muninn-upload.service"
+    if [ ! -f "$UNIT" ]; then
+        cat "$TMP_DIR/sched.log" >&2
+        fail "no unit file written to $UNIT"
+    fi
+    grep -q "Description=Muninn ADS-B watch+upload \[DRY-RUN\]" "$UNIT" \
+        || fail "dry-run marker missing from unit Description"
+    grep -q -- "--watch .* --watch-glob 'aircraft.json' --upload --dry-run" "$UNIT" \
+        || fail "ExecStart missing expected flags"
+    grep -q "# managed-by-muninn" "$UNIT" \
+        || fail "marker comment missing from unit"
+    ok "unit content correct (dry-run + marker + flags)"
+else
+    say "(skipping systemd unit smoke — not on a systemd Linux host)"
 fi
-grep -q "Description=Muninn ADS-B watch+upload \[DRY-RUN\]" "$UNIT" \
-    || fail "dry-run marker missing from unit Description"
-grep -q -- "--watch .* --watch-glob 'aircraft.json' --upload --dry-run" "$UNIT" \
-    || fail "ExecStart missing expected flags"
-grep -q "# managed-by-muninn" "$UNIT" \
-    || fail "marker comment missing from unit"
-ok "unit content correct (dry-run + marker + flags)"
 
 say "all smoke checks passed"
 exit 0

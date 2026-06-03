@@ -4,6 +4,45 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.11] - 2026-06-03 - Wigle v1.2.0 lesson back-port
+
+Patch release back-porting two lessons baked into wigle-to-wdgwars
+v1.2.0 that Muninn predates. Both fixes are invisible during normal
+interactive use but matter when Muninn is driven by a provisioning
+script or tooling that pipes its stdin.
+
+Identified during the 2026-06-03 feeder-family alignment audit; one
+of four PRs in that sweep. No behavior change for interactive users.
+
+### Fixed
+
+- `_prompt_yes_no` and `_prompt_yes_no_simple` now emit an explicit
+  newline after consuming a piped-stdin answer. Interactive TTY
+  input gets its own newline from the terminal — piped input
+  doesn't, which previously glued the next section header onto the
+  prompt line in scripted runs.
+- `setup.sh` / `run.sh` / `update.sh` now `[ -t 0 ]`-gate the
+  trailing `read -n 1 ... "Press any key to close..."`. Piped /
+  non-TTY invocations used to hang indefinitely on that line; they
+  now exit cleanly. Matches the gate wigle ships in v1.2.0.
+- `scripts/smoke.sh` now resolves the venv interpreter on both
+  Linux (`venv/bin/python`) and Windows (`venv/Scripts/python.exe`),
+  so developers can run smoke locally on either OS instead of only
+  in CI.
+- `scripts/smoke.sh` `--schedule` assertion section is now gated on
+  Linux+systemd, matching wigle's gate. Previously it would attempt
+  the systemd-unit-write path on every OS — on Windows it dispatched
+  to `schtasks /Create`, where long temp-directory paths combined
+  with the python+muninn.py+flags action string blew through the
+  schtasks `/TR` 261-char cap. The path isn't broken in real
+  installs (real install paths are short); the smoke harness just
+  shouldn't have been hitting the Windows scheduler with synthetic
+  long-tempdir paths to begin with.
+
+### Skipped from the audit
+
+- gungnir pin bump: Muninn already pins gungnir v0.1.2 (current).
+
 ## [2.0.10] - 2026-06-01 - --preview flag (parser dry-run, cross-tool consistency)
 
 Adds `--preview` to Muninn. Parses the input, prints up to 6 normalised
