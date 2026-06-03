@@ -43,5 +43,7 @@ echo "[3/3] Updating muninn.py..."
 "$VENV_PY" muninn.py --update
 
 echo
-read -n 1 -s -r -p "Press any key to close..."
-echo
+if [ -t 0 ]; then
+    read -n 1 -s -r -p "Press any key to close..."
+    echo
+fi

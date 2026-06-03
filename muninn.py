@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.10"
+__version__ = "2.0.11"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -243,11 +243,20 @@ $s.Save()
 
 
 def _prompt_yes_no_simple(question: str, default: bool = True) -> bool:
-    """Mini y/n prompt for use outside interactive_setup()."""
+    """Mini y/n prompt for use outside interactive_setup().
+
+    Always emits a newline after the answer when stdin is piped so the
+    next line of output doesn't collide with the prompt. Interactive
+    TTY input gets its own newline from the terminal; piped input
+    doesn't, which glues section headers onto the prompt line.
+    """
     suffix = " [Y/n] " if default else " [y/N] "
+    piped = not sys.stdin.isatty()
     try:
         print(question + suffix, end="", flush=True, file=sys.stderr)
         ans = sys.stdin.readline().strip().lower()
+        if piped:
+            print("", file=sys.stderr)
     except (KeyboardInterrupt, EOFError):
         print("", file=sys.stderr)
         return default
@@ -334,8 +343,15 @@ def load_key(cli_key: str | None) -> str:
 
 def _prompt_yes_no(question: str, default: bool = True) -> bool:
     """Ask a y/n question on stderr. Returns True for yes, False for no.
-    On EOF / Ctrl+C, returns the default so non-interactive runs don't hang."""
+
+    On EOF / Ctrl+C, returns the default so non-interactive runs don't
+    hang. Always emits a newline after the answer when stdin is piped
+    so the next section header doesn't collide with the prompt line —
+    interactive TTY input gets its newline from the terminal, piped
+    input doesn't.
+    """
     suffix = " [Y/n] " if default else " [y/N] "
+    piped = not sys.stdin.isatty()
     while True:
         try:
             print(question + suffix, end="", flush=True, file=sys.stderr)
@@ -344,6 +360,8 @@ def _prompt_yes_no(question: str, default: bool = True) -> bool:
                 print("", file=sys.stderr)
                 return default
             ans = line.strip().lower()
+            if piped:
+                print("", file=sys.stderr)
         except (KeyboardInterrupt, EOFError):
             print("", file=sys.stderr)
             return default
