@@ -4,6 +4,28 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.12] - 2026-06-05 - gungnir v0.1.3 (structured 413 handling)
+
+Pin bump only. No Muninn behavior changes.
+
+LOCOSP rolled out a temporary 15 MB body cap on every wdgwars.pl
+upload endpoint on 2026-06-05 with a structured 413 envelope
+(`{error: payload-too-large, max_bytes, received, ...}`). gungnir
+v0.1.3 recognizes that envelope: it logs `max_bytes` / `received` /
+body size, records a cooldown via `gungnir.cooldown.record`, and
+returns the envelope to the caller. Previous behavior was to log
+413 as a generic 4xx rejection (functionally safe, no retry blast,
+but no structured signal).
+
+Muninn aircraft snapshots are kilobytes per cycle, well under the
+cap, so this is defensive insurance rather than a real-world fix.
+The pin bump propagates the better diagnostics to every Muninn
+installation on the next `python3 muninn.py --update`.
+
+### Changed
+
+- `requirements.txt`: gungnir pinned `v0.1.2` → `v0.1.3`.
+
 ## [2.0.11] - 2026-06-03 - Wigle v1.2.0 lesson back-port
 
 Patch release back-porting two lessons baked into wigle-to-wdgwars
