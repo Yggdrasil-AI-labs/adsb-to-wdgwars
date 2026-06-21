@@ -47,7 +47,7 @@ If you suspect your key has leaked, rotate it on the WDGoWars site and run `--sa
 
 ## Watch mode
 
-- The state file `.adsb-state.json` lives in the watched directory and tracks `filename → size:mtime` signatures. It is **not** itself a secret (no API keys, no aircraft data — just file metadata).
+- The state file `.adsb-state.json` lives in the watched directory and tracks `filename → size:mtime` signatures. It is **not** itself a secret (no API keys, no aircraft data — just file metadata). The write is confined to the watched directory and refuses a symlinked state file, so it can't be redirected elsewhere.
 - The watch loop **only reads files matching `--watch-glob`** (default `*.txt`). It explicitly skips:
   - Dotfiles (anything starting with `.`)
   - The tool's own `.wdgwars.json` outputs (no infinite loop)
@@ -77,9 +77,17 @@ Please do **not** post security issues to the public issue tracker. Aim is to gi
 | Symlink attack on key file | `--save-key` refuses to write through symlinks |
 | MITM on upload | Explicit `ssl.create_default_context()` — system trust store, hostname verification, TLS 1.2+ |
 | Command injection | No `shell=True`, no `eval`, no `os.system`. All file I/O via `pathlib`/`open()`. |
+| Injection into persisted scheduler entries | Capture dir + glob baked into systemd/cron/schtasks entries are quoted (`shlex.quote` for cron, double-quoting for systemd/schtasks) and the glob is whitelisted (`_validate_glob`); newlines/NUL rejected so no second directive can be injected |
+| Watch state-file path traversal | The `.adsb-state.json` write is confined to the watched directory and refuses a symlinked state file (`_state_path_for`) |
+| `.sqb` filename overriding read-only DB open | SQLite opened via a `pathname2url`-encoded read-only URI (`_sqlite_ro_uri`), so a name like `x?mode=rwc.sqb` can't flip the mode |
+| Redirected decoder dir under world-writable `/tmp` | Symlinked candidate directories are excluded from suggestions (`_guess_decoder_dirs`) |
 | Replay attacks against WDGoWars | HMAC-SHA256-signed envelope with a `secrets.token_hex(8)` nonce per request — server rejects replays |
 | Unintended uploads | `--upload` is **opt-in** only. Without it, the tool never makes network requests. |
 | Surveillance / telemetry | None. The tool only contacts WDGoWars when explicitly opted in. No analytics, no error reporting, no usage tracking. |
+
+A full review of the SonarCloud SAST findings against `muninn.py` — what was
+fixed, and what is accepted-by-design for a local operator CLI with the
+reasoning — lives in [SECURITY-FINDINGS.md](SECURITY-FINDINGS.md).
 
 ## Things this tool does NOT defend against (out of scope)
 

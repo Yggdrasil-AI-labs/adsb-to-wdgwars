@@ -4,6 +4,49 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.13] - 2026-06-21 - SonarCloud SAST findings reviewed & fixed
+
+Security-hardening release. On 2026-06-21 SonarCloud's SAST flagged 21
+findings in `muninn.py` (1 BLOCKER, 1 CRITICAL, 19 MAJOR) that had been
+marked *Accepted* to unblock the CI quality gate. Each was reviewed and
+either fixed with real validation or accepted-by-design with a documented
+rationale for a local operator CLI. Full per-finding disposition lives in
+the new [SECURITY-FINDINGS.md](SECURITY-FINDINGS.md).
+
+No behavior change for normal interactive use: real capture paths and
+decoder globs (`aircraft.json`, `chunk_*.json.gz`, `*.json`) all pass the
+new validation unchanged. The hardening bites only on hostile/malformed
+input (shell metacharacters in a glob, a `?mode=rwc` SQLite filename, a
+symlinked watch state file, a capture dir carrying a `$(...)` substitution).
+
+### Added
+
+- "Path & argument safety" helper section in `muninn.py`: `_validate_glob`,
+  `_reject_control_chars`, `_user_path`, `_state_path_for`, `_sqlite_ro_uri`,
+  `_systemd_quote`, `_schtasks_arg`, and an `_UnsafeInput` error surfaced as a
+  friendly one-line message + exit code 2.
+- `tests/test_security.py` — regression coverage for every hardened path.
+- `SECURITY-FINDINGS.md` — disposition of all 21 SonarCloud findings.
+
+### Fixed
+
+- **S2083 (BLOCKER)** — watch-mode `.adsb-state.json` write is now confined to
+  the watched directory and refuses a symlinked state file.
+- **S5443 (CRITICAL)** — decoder-dir suggestions exclude symlinked candidates,
+  so a redirected `/tmp/dump1090` is never offered.
+- **S8706 (×2)** — `.sqb` files are opened via a `pathname2url`-encoded
+  read-only URI, so a filename can't override `mode=ro`.
+- **S6350 / S8705 (×3)** — capture dir + glob baked into systemd/cron/schtasks
+  entries are quoted (`shlex.quote` for cron, double-quoting for
+  systemd/schtasks) and the glob is whitelisted; newlines/NUL rejected.
+- **S8707 / S6549 (×14)** — CLI paths feeding persisted artifacts are
+  normalised + validated; output destinations (`--out`, `--out-dir`, input)
+  are normalised and control-char-checked (accept-by-design, see SECURITY.md).
+
+### Security
+
+- Extended the SECURITY.md threat model with the new mitigations.
+
 ## [2.0.12] - 2026-06-05 - gungnir v0.1.3 (structured 413 handling)
 
 Pin bump only. No Muninn behavior changes.
