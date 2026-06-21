@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.12"
+__version__ = "2.0.13"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -90,6 +90,8 @@ import csv
 import json
 import logging
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -207,6 +209,123 @@ def _save_folder_prefs(input_dir: Path, output_dir: Path) -> None:
         "input":  str(input_dir),
         "output": str(output_dir),
     }, indent=2))
+
+
+# ── Path & argument safety ──────────────────────────────────────────────────
+#
+# Muninn is an operator-run CLI: whoever types the command already has a shell
+# on the box, so "path traversal" / "command injection" via their own argv is
+# not the privilege boundary it is for a web service. The threats we DO defend
+# against here are narrower but real, and each consumer below points back to
+# this note:
+#
+#   1. A glob or capture directory that, once baked into a *persisted*
+#      scheduler artifact (systemd ExecStart, crontab line, schtasks action),
+#      runs repeatedly with the user's privileges. A stray quote or shell
+#      metacharacter there is a latent, recurring code-execution + reliability
+#      bug — not a one-shot one the operator can see and undo. (S6350 / S8705)
+#   2. A filename or directory that smuggles a NUL/newline into a value that
+#      is then used to build a *second* path (the watch state file) or a
+#      command line, letting a write escape where the operator pointed us, or
+#      a newline inject a second crontab/systemd directive. (S2083)
+#   3. A SQLite capture filename containing URI metacharacters (``?``/``#``)
+#      that would otherwise override the read-only ``?mode=ro`` we open with —
+#      e.g. a file literally named ``x?mode=rwc.sqb``. (S8706)
+#
+# Where a finding is genuinely acceptable-by-design for a local CLI (``--out``
+# can point anywhere on purpose — see SECURITY.md "Output file handling"), that
+# is documented at the call site and normalised rather than papered over with a
+# fake sandbox root. The full disposition of every SonarCloud finding lives in
+# SECURITY-FINDINGS.md.
+
+
+class _UnsafeInput(ValueError):
+    """A user-supplied path or glob is unsafe to use as given.
+
+    Subclasses ValueError so the pure renderers (which already raise
+    ValueError on bad input) stay consistent and so existing
+    ``assertRaises(ValueError)`` tests keep working. Surfaced to the user as a
+    friendly one-line message + exit code 2 by the ``__main__`` wrapper."""
+
+
+# Real decoder globs — aircraft.json, chunk_*.json.gz, *.ndjson.gz, *.json —
+# are all literal filename characters plus glob metacharacters. Anything
+# outside this set (quotes, spaces, ;, $, backticks, /, \) has no business in
+# a pattern we render into a scheduler command, so reject it outright.
+_SAFE_GLOB_RE = re.compile(r"^[A-Za-z0-9._*?\[\]\-]{1,128}$")
+
+
+def _reject_control_chars(value: str, label: str) -> str:
+    """Reject NUL / CR / LF in a value bound for a path or a rendered command.
+
+    A newline injects a second crontab/systemd directive; a NUL truncates the
+    path at the OS layer (classic poison-null-byte). Returns the value
+    unchanged when clean."""
+    if "\x00" in value or "\n" in value or "\r" in value:
+        raise _UnsafeInput(
+            f"refusing {label} with an embedded control character")
+    return value
+
+
+def _validate_glob(glob: str) -> str:
+    """Return ``glob`` unchanged if it is a safe file-glob, else raise.
+
+    Applied wherever the pattern is baked into a persisted scheduler unit or
+    command (threat 1 above). Not needed for live ``--watch`` where the value
+    only feeds ``Path.glob()``, but cheap enough to apply uniformly."""
+    if not _SAFE_GLOB_RE.match(glob or ""):
+        raise _UnsafeInput(
+            f"unsafe glob {glob!r}: only letters, digits and the glob "
+            f"characters . _ - * ? [ ] are allowed (it is written into a "
+            f"scheduler command).")
+    return glob
+
+
+def _user_path(raw: str, *, label: str = "path", resolve: bool = True) -> Path:
+    """Normalise a user-supplied path.
+
+    Expands ``~``, rejects embedded control characters, and (by default)
+    collapses ``..``/``.`` segments to a single canonical absolute path via
+    ``resolve()``. It deliberately does NOT confine the result to a root: an
+    operator CLI legitimately writes wherever the operator points it (see
+    SECURITY.md). The value of ``resolve()`` is that traversal sequences are
+    canonicalised so later code — and the absolute path we print back — refer
+    to one unambiguous location."""
+    _reject_control_chars(str(raw), label)
+    p = Path(raw).expanduser()
+    return p.resolve() if resolve else p
+
+
+def _state_path_for(watch_directory: Path) -> Path:
+    """Build the watch-mode state-file path and prove it stays inside the
+    watched directory (threat 2 above).
+
+    The filename is the constant ``.adsb-state.json``; the only way the write
+    could escape is if ``watch_directory`` — or a same-named state file already
+    present in it — resolves through a symlink to somewhere else. We resolve
+    both sides and require the state file's parent to be exactly the resolved
+    watched directory, so a planted ``.adsb-state.json -> /etc/cron.d/x``
+    symlink is rejected instead of followed."""
+    base = watch_directory.resolve()
+    state = (base / ".adsb-state.json").resolve()
+    if state.parent != base:
+        raise _UnsafeInput(
+            f"watch state file {state} would escape the watched directory "
+            f"{base} (symlink in the path?) — refusing to write it.")
+    return state
+
+
+def _sqlite_ro_uri(path: Path) -> str:
+    """Build a read-only SQLite URI whose query string can't be hijacked by
+    the filename (threat 3 above).
+
+    A capture literally named ``x?mode=rwc.sqb`` would, under naive
+    ``f"file:{path}?mode=ro"`` interpolation, parse as the ``x`` file opened
+    ``mode=rwc`` — silently dropping the read-only guard and even creating
+    files. ``pathname2url`` percent-encodes ``?`` and ``#`` (and spaces) in the
+    path so the only query parameter is the one we append."""
+    return ("file:" + urllib.request.pathname2url(str(path.resolve()))
+            + "?mode=ro")
 
 
 def _create_desktop_shortcut(muninn_folder: Path) -> bool:
@@ -806,7 +925,9 @@ def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
         if sys.platform == "emscripten":
             conn = sqlite3.connect(str(path))
         else:
-            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            # URI built via _sqlite_ro_uri so a filename containing ?/# can't
+            # override the read-only mode=ro guard (see Path & argument safety).
+            conn = sqlite3.connect(_sqlite_ro_uri(path), uri=True)
     except sqlite3.Error as e:
         sys.exit(f"[muninn] could not open {path.name} as SQLite: {e}")
 
@@ -1570,7 +1691,9 @@ def watch_dir(watch_dir: Path, args) -> int:
     watched dir so restarts don't re-process everything."""
     if not watch_dir.is_dir():
         sys.exit(f"--watch requires a directory, got: {watch_dir}")
-    state_path = watch_dir / ".adsb-state.json"
+    # Confine the state file to the watched dir; rejects a symlinked
+    # .adsb-state.json that would redirect the write elsewhere (S2083).
+    state_path = _state_path_for(watch_dir)
     seen: dict[str, str] = {}
     try:
         seen = json.loads(state_path.read_text())
@@ -1698,7 +1821,13 @@ def _guess_decoder_dirs() -> list[Path]:
         ]
     elif sys.platform == "darwin":
         candidates = [
-            Path("/tmp/dump1090"),
+            # /tmp is world-writable, so a real /tmp/dump1090 could have been
+            # pre-created (or symlinked) by another local user. It stays in the
+            # list because some legacy dump1090 builds genuinely write there,
+            # but the symlink filter below means we never suggest one that
+            # redirects elsewhere, and it is only ever an interactive
+            # suggestion the operator must confirm. (S5443)
+            Path("/tmp/dump1090"),  # NOSONAR S5443 — guarded; see comment above
             Path("/usr/local/var/dump1090"),
         ]
     elif sys.platform == "win32":
@@ -1707,7 +1836,11 @@ def _guess_decoder_dirs() -> list[Path]:
             Path(r"C:\dump1090"),
             Path.home() / "dump1090",
         ]
-    return [c for c in candidates if c.is_dir()]
+    # is_dir() follows symlinks, so a candidate that is a symlink to a
+    # directory would still pass. Exclude symlinked candidates outright: a
+    # decoder dir under /tmp or /run that is a symlink is a swap/redirect
+    # signal, not a normal install. (S5443)
+    return [c for c in candidates if c.is_dir() and not c.is_symlink()]
 
 
 def _guess_glob_for_dir(d: Path) -> str:
@@ -1752,6 +1885,42 @@ def _schedule_mechanism() -> str:
 
 # ── Pure renderers (no side effects, tested in isolation) ──────────────────
 
+def _systemd_quote(value) -> str:
+    """Render a path as a single double-quoted systemd ExecStart argument.
+
+    systemd is not a shell, but ExecStart still word-splits on whitespace and
+    treats ``%`` as a unit specifier. Double-quoting keeps a path with spaces
+    intact; we reject the characters that would let a value break out of the
+    quotes or be reinterpreted (``"``, ``%``, NUL, newline). Backslash is
+    rejected too — systemd applies C-style escapes inside quotes and these
+    units are POSIX-only, where paths never need one."""
+    # systemd units are POSIX-only; render with forward slashes so the output
+    # is identical regardless of the host the renderer is exercised on.
+    s = value if isinstance(value, str) else Path(value).as_posix()
+    _reject_control_chars(s, "scheduler path")
+    if '"' in s or "%" in s or "\\" in s:
+        raise _UnsafeInput(
+            f"path {s!r} contains a character (\" % or \\) that cannot be "
+            f"safely written into a systemd unit.")
+    return f'"{s}"'
+
+
+def _schtasks_arg(value) -> str:
+    """Render a path as a single double-quoted schtasks action argument.
+
+    The whole action goes to ``schtasks /TR`` as one argv element (no shell at
+    creation time), but Task Scheduler re-parses it on each run. A literal
+    ``"`` in the path would break out of its quotes there, so reject it (and
+    control chars) rather than emit a task that runs the wrong command."""
+    s = str(value)
+    _reject_control_chars(s, "scheduler path")
+    if '"' in s:
+        raise _UnsafeInput(
+            f'path {s!r} contains a double quote, which cannot be safely '
+            f'written into a scheduled-task command.')
+    return f'"{s}"'
+
+
 def render_systemd_units(mode: str, input_dir: Path, glob: str,
                          interval_min: int, python_exe: str,
                          muninn_py: Path,
@@ -1767,6 +1936,13 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
     """
     dry = " --dry-run" if dry_run else ""
     desc_suffix = " [DRY-RUN]" if dry_run else ""
+    # ExecStart is parsed by systemd (not a shell), but it still splits on
+    # whitespace, honours quotes, and treats `%` as a specifier. Validate the
+    # glob and double-quote the path so a dir with spaces is one argument and a
+    # value carrying a quote/%/newline is refused rather than silently breaking
+    # the unit. (See Path & argument safety; S6350.)
+    glob = _validate_glob(glob)
+    dir_arg = _systemd_quote(input_dir)
     if mode == "watch":
         service = (
             "[Unit]\n"
@@ -1777,7 +1953,7 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
             "\n"
             "[Service]\n"
             "Type=simple\n"
-            f"ExecStart={python_exe} {muninn_py} --watch {input_dir} "
+            f"ExecStart={python_exe} {muninn_py} --watch {dir_arg} "
             f"--watch-glob {glob!r} --upload{dry}\n"
             "Restart=on-failure\n"
             "RestartSec=10s\n"
@@ -1794,7 +1970,7 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
             "\n"
             "[Service]\n"
             "Type=oneshot\n"
-            f"ExecStart={python_exe} {muninn_py} {input_dir} --upload{dry}\n"
+            f"ExecStart={python_exe} {muninn_py} {dir_arg} --upload{dry}\n"
         )
         timer = (
             "[Unit]\n"
@@ -1821,7 +1997,15 @@ def render_cron_line(input_dir: Path, interval_min: int,
     cron_min = "*" if interval_min == 1 else f"*/{interval_min}"
     log = "$HOME/.muninn-cron.log"
     dry = " --dry-run" if dry_run else ""
-    return (f"{cron_min} * * * * {python_exe} {muninn_py} {input_dir} "
+    # cron pipes each line through /bin/sh, so every interpolated value is shell
+    # input. shlex.quote neutralises spaces and metacharacters; without it a
+    # capture dir like `/data/$(reboot)` would execute on every tick (S6350).
+    # `log` stays unquoted so $HOME still expands. _reject_control_chars guards
+    # against a newline injecting a second crontab directive.
+    py_q = shlex.quote(_reject_control_chars(str(python_exe), "python path"))
+    script_q = shlex.quote(_reject_control_chars(str(muninn_py), "script path"))
+    dir_q = shlex.quote(_reject_control_chars(str(input_dir), "capture dir"))
+    return (f"{cron_min} * * * * {py_q} {script_q} {dir_q} "
             f"--upload{dry} >> {log} 2>&1  # {SCHEDULE_MARKER}\n")
 
 
@@ -1831,13 +2015,20 @@ def render_schtasks_create(mode: str, input_dir: Path, glob: str,
                            dry_run: bool = False) -> list[str]:
     """Pure: render the schtasks /Create argv for Windows."""
     dry = " --dry-run" if dry_run else ""
+    # The action string is double-quoted and later re-parsed by Task Scheduler.
+    # Validate the glob and forbid a literal `"` / control char in the paths so
+    # a value can't break out of its quotes inside the persisted task (S6350).
+    glob = _validate_glob(glob)
+    py_q = _schtasks_arg(python_exe)
+    script_q = _schtasks_arg(muninn_py)
+    dir_q = _schtasks_arg(input_dir)
     if mode == "watch":
-        action = (f'"{python_exe}" "{muninn_py}" --watch "{input_dir}" '
+        action = (f'{py_q} {script_q} --watch {dir_q} '
                   f'--watch-glob "{glob}" --upload{dry}')
         return ["schtasks", "/Create", "/TN", WINDOWS_TASK_WATCH,
                 "/TR", action, "/SC", "ONSTART", "/RL", "LIMITED", "/F"]
     if mode == "periodic":
-        action = (f'"{python_exe}" "{muninn_py}" "{input_dir}" '
+        action = (f'{py_q} {script_q} {dir_q} '
                   f'--upload{dry}')
         return ["schtasks", "/Create", "/TN", WINDOWS_TASK_PERIODIC,
                 "/TR", action, "/SC", "MINUTE", "/MO", str(interval_min),
@@ -2215,8 +2406,11 @@ def cmd_schedule_headless(args) -> int:
         sys.exit(f"--schedule-mode must be 'watch' or 'periodic', got {mode!r}")
     if not args.schedule_input:
         sys.exit("--schedule requires --schedule-input <dir>")
-    input_dir = Path(args.schedule_input).expanduser()
-    glob = args.schedule_glob or _guess_glob_for_dir(input_dir)
+    # Normalise + canonicalise: this path is baked into a persisted scheduler
+    # artifact, so collapse .. now and reject control characters early.
+    input_dir = _user_path(args.schedule_input, label="--schedule-input")
+    glob = _validate_glob(args.schedule_glob) if args.schedule_glob \
+        else _guess_glob_for_dir(input_dir)
     interval_min = args.schedule_interval or 5
     dry_run = bool(args.schedule_dry_run)
     mech = _schedule_mechanism()
@@ -2303,9 +2497,11 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
     if args.stdout:
         print(json.dumps(web_payload, indent=2))
     elif args.out:
-        out_path = Path(args.out).expanduser().resolve()
+        # --out points wherever the operator says (acceptable by design, see
+        # SECURITY.md). _user_path still normalises .. and rejects NUL/newline.
+        out_path = _user_path(args.out, label="--out")
     elif args.out_dir:
-        od = Path(args.out_dir).expanduser().resolve()
+        od = _user_path(args.out_dir, label="--out-dir")
         out_path = od / f"{path.stem}.wdgwars.json"
     elif args.upload and args.no_save:
         out_path = None
@@ -2800,6 +2996,11 @@ def main() -> int:
     # `python muninn.py C:\foo bar\file.txt`  -> args.input = ["C:\\foo", "bar\\file.txt"]
     # Try the joined form first, fall back to first-arg-only.
     raw = args.input if isinstance(args.input, list) else [args.input]
+    # Reject control characters (NUL/newline) before the value touches the
+    # filesystem. The path is otherwise free to point anywhere the operator
+    # can reach — this is a local CLI, not a sandbox (see SECURITY.md).
+    for _piece in raw:
+        _reject_control_chars(str(_piece), "input path")
     joined = " ".join(raw)
     if len(raw) > 1 and Path(joined).exists():
         path = Path(joined)
@@ -2865,4 +3066,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except _UnsafeInput as _e:
+        # Rejected path/glob input — one friendly line, no traceback.
+        print(f"[muninn] {_e}", file=sys.stderr)
+        sys.exit(2)
