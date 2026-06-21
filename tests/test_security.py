@@ -101,13 +101,16 @@ class StatePathConfinementTests(unittest.TestCase):
             self.assertEqual(state.name, ".adsb-state.json")
 
     def test_symlinked_state_file_is_rejected(self):
-        # A planted `.adsb-state.json` symlink pointing outside the watched
-        # dir must be refused, not followed.
-        with tempfile.TemporaryDirectory() as d:
-            base = Path(d)
-            outside = base / "outside.json"
+        # A planted `.adsb-state.json` symlink pointing OUTSIDE the watched
+        # dir must be refused, not followed. The target lives in a separate
+        # temp dir so the resolved parent genuinely differs from the watched
+        # dir (a target inside the dir would resolve back to it and be safe).
+        with tempfile.TemporaryDirectory() as d, \
+                tempfile.TemporaryDirectory() as other:
+            base = Path(d).resolve()
+            outside = Path(other).resolve() / "evil.json"
             outside.write_text("{}")
-            link = base.resolve() / ".adsb-state.json"
+            link = base / ".adsb-state.json"
             try:
                 os.symlink(outside, link)
             except (OSError, NotImplementedError, AttributeError):
