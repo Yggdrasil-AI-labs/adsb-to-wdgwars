@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.13"
+__version__ = "2.0.14"
 GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1963,6 +1963,12 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
         )
         return {"service": service, "timer": None}
     if mode == "periodic":
+        # Periodic mode targets decoders that rewrite one rolling file in a
+        # runtime dir (readsb -> /run/readsb, dump1090-fa -> /run/dump1090-fa).
+        # Those dirs are tmpfs the feeder user can't write to, so saving the
+        # audit-trail JSON back next to the input fails (and any file that
+        # does land there is wiped on reboot). --no-save uploads from memory
+        # and skips the local write — reads still work fine.
         service = (
             "[Unit]\n"
             f"Description=Muninn ADS-B upload (one-shot){desc_suffix}\n"
@@ -1970,7 +1976,7 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
             "\n"
             "[Service]\n"
             "Type=oneshot\n"
-            f"ExecStart={python_exe} {muninn_py} {dir_arg} --upload{dry}\n"
+            f"ExecStart={python_exe} {muninn_py} {dir_arg} --upload{dry} --no-save\n"
         )
         timer = (
             "[Unit]\n"
@@ -2005,8 +2011,11 @@ def render_cron_line(input_dir: Path, interval_min: int,
     py_q = shlex.quote(_reject_control_chars(str(python_exe), "python path"))
     script_q = shlex.quote(_reject_control_chars(str(muninn_py), "script path"))
     dir_q = shlex.quote(_reject_control_chars(str(input_dir), "capture dir"))
+    # --no-save: cron is periodic-only and targets rolling files in runtime
+    # dirs (e.g. /run/readsb) the feeder user can't write to. Upload from
+    # memory; skip the local audit-trail write that would otherwise fail.
     return (f"{cron_min} * * * * {py_q} {script_q} {dir_q} "
-            f"--upload{dry} >> {log} 2>&1  # {SCHEDULE_MARKER}\n")
+            f"--upload{dry} --no-save >> {log} 2>&1  # {SCHEDULE_MARKER}\n")
 
 
 def render_schtasks_create(mode: str, input_dir: Path, glob: str,
@@ -2028,8 +2037,11 @@ def render_schtasks_create(mode: str, input_dir: Path, glob: str,
         return ["schtasks", "/Create", "/TN", WINDOWS_TASK_WATCH,
                 "/TR", action, "/SC", "ONSTART", "/RL", "LIMITED", "/F"]
     if mode == "periodic":
+        # --no-save mirrors the systemd/cron periodic path: upload from memory
+        # and skip writing the audit-trail JSON back into the decoder's output
+        # dir, which may not be writable by the scheduled task's account.
         action = (f'{py_q} {script_q} {dir_q} '
-                  f'--upload{dry}')
+                  f'--upload{dry} --no-save')
         return ["schtasks", "/Create", "/TN", WINDOWS_TASK_PERIODIC,
                 "/TR", action, "/SC", "MINUTE", "/MO", str(interval_min),
                 "/RL", "LIMITED", "/F"]

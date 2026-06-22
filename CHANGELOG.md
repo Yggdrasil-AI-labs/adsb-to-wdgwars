@@ -4,6 +4,40 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.14] - 2026-06-22 - Scheduled periodic uploads no longer write to the decoder's runtime dir
+
+Bug-fix release. Periodic schedules (systemd timer, cron, and Windows
+schtasks) ran `muninn.py <dir> --upload`, which wrote the audit-trail
+`*.wdgwars.json` back **next to the input file** — i.e. into the decoder's
+output dir. For the decoders periodic mode targets (readsb → `/run/readsb`,
+dump1090-fa → `/run/dump1090-fa`), that dir is a runtime tmpfs the feeder
+user can't write to (and that resets permissions / is wiped on reboot), so
+every scheduled tick failed on the local write even though the upload
+itself was fine. Reported from the field: a user fell back to a hand-rolled
+cron job and manually relocating the output file to work around it.
+
+Periodic mode now bakes `--no-save` into the generated command: it reads
+the rolling input file (reads were never the problem), uploads from memory,
+and skips the local write entirely. Watch mode is unchanged — it manages
+files in a user-writable dir where the audit JSON write is fine and useful.
+
+### Fixed
+
+- `render_systemd_units`, `render_cron_line`, and `render_schtasks_create`
+  now append `--no-save` to the **periodic** upload command so a read-only
+  decoder runtime dir (e.g. `/run/readsb`) no longer fails every tick.
+
+### Added
+
+- `tests/test_scheduler.py` — coverage asserting `--no-save` is present in
+  every periodic variant and absent from watch mode.
+
+### Upgrade note
+
+Re-run `python3 muninn.py --schedule` (or `--unschedule` then `--schedule`)
+to regenerate the unit with the fix. Existing manual cron lines pointed at a
+runtime dir should add `--no-save`.
+
 ## [2.0.13] - 2026-06-21 - SonarCloud SAST findings reviewed & fixed
 
 Security-hardening release. On 2026-06-21 SonarCloud's SAST flagged 21

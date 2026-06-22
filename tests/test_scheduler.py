@@ -64,6 +64,21 @@ class SystemdRendererTests(unittest.TestCase):
         # Watch flags must NOT appear on the one-shot service.
         self.assertNotIn("--watch", units["service"])
 
+    def test_periodic_service_uses_no_save(self):
+        # Periodic mode targets rolling files in runtime dirs (e.g.
+        # /run/readsb) the feeder user can't write to. The one-shot service
+        # must upload from memory and skip the local audit-trail write.
+        units = muninn.render_systemd_units(
+            "periodic", INPUT, GLOB, 15, PY, SCRIPT)
+        self.assertIn("--no-save", units["service"])
+
+    def test_watch_service_does_not_use_no_save(self):
+        # Watch mode manages files in a user-writable dir, so the audit
+        # JSON write is fine — --no-save must not leak into watch.
+        units = muninn.render_systemd_units(
+            "watch", INPUT, GLOB, 5, PY, SCRIPT)
+        self.assertNotIn("--no-save", units["service"])
+
     def test_periodic_timer_interval(self):
         units = muninn.render_systemd_units(
             "periodic", INPUT, GLOB, 15, PY, SCRIPT)
@@ -120,6 +135,12 @@ class CronRendererTests(unittest.TestCase):
         line = muninn.render_cron_line(INPUT, 5, PY, SCRIPT)
         self.assertIn(muninn.SCHEDULE_MARKER, line)
 
+    def test_includes_no_save(self):
+        # cron is periodic-only against runtime dirs — must skip the local
+        # write so an unwritable /run/<decoder> dir doesn't fail every tick.
+        line = muninn.render_cron_line(INPUT, 5, PY, SCRIPT)
+        self.assertIn("--no-save", line)
+
     def test_logs_to_user_home(self):
         line = muninn.render_cron_line(INPUT, 5, PY, SCRIPT)
         self.assertIn(">> $HOME/.muninn-cron.log 2>&1", line)
@@ -167,6 +188,13 @@ class SchtasksRendererTests(unittest.TestCase):
         action = cmd[i + 1]
         self.assertNotIn("--watch", action)
         self.assertIn("--upload", action)
+
+    def test_periodic_action_uses_no_save(self):
+        cmd = muninn.render_schtasks_create(
+            "periodic", self.INPUTW, self.GLOBW, 5, self.PYW, self.SCRIPTW)
+        i = cmd.index("/TR")
+        action = cmd[i + 1]
+        self.assertIn("--no-save", action)
 
     def test_force_flag_for_idempotent_overwrite(self):
         # /F lets schtasks /Create replace an existing task without
