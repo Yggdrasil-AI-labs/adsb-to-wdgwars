@@ -9,7 +9,7 @@ aircraft count so you can verify a parser change end-to-end.
 | File | Format | Aircraft (positions) | Notes |
 |---|---|---:|---|
 | `avr_sample.txt`        | AVR raw           |   0 | Smoke test — 2 frames, no valid CPR pair, parser-doesn't-crash check |
-| `avr_real.txt`          | AVR raw           |   8 | Real HackRF capture, Cleveland area |
+| `avr_real.txt`          | AVR raw           |   8 | Real HackRF capture |
 | `sbs1_sample.txt`       | SBS-1 (BaseStation) |  3 | Hand-crafted across 3 ICAOs |
 | `sbs1_real.txt`         | SBS-1             |  10 | Real port-30003 capture |
 | `dump1090_sample.json`  | dump1090 / readsb |   2 | aircraft.json shape |
@@ -66,7 +66,7 @@ different `now` value; the aircraft list shape and counts are stable.
 ## Where the real captures came from
 
 - `avr_real.txt`, `sbs1_real.txt`, `dump1090_real.json` — captured on
-  the Cleveland-area receiver (Lorain County). Realistic mix of GA,
+  a real receiver. Realistic mix of GA,
   commercial, and helicopter traffic, plus a handful of message types
   that exercise the edge cases (no position, missing altitude, etc.).
 - `mayhem_sample.txt` — PortaPack Mayhem firmware on an H4M, captured
