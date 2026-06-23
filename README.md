@@ -3,9 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/HiroAlleyCat/adsb-to-wdgwars/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/HiroAlleyCat/adsb-to-wdgwars?color=b08850&label=release"></a>
+  <a href="https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/actions/workflows/ci-quality-gates.yml"><img alt="CI" src="https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/actions/workflows/ci-quality-gates.yml/badge.svg"></a>
+  <a href="https://sonarcloud.io/dashboard?id=Yggdrasil-AI-labs_adsb-to-wdgwars"><img alt="Quality gate" src="https://sonarcloud.io/api/project_badges/measure?project=Yggdrasil-AI-labs_adsb-to-wdgwars&metric=alert_status"></a>
+  <a href="https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Yggdrasil-AI-labs/adsb-to-wdgwars?color=b08850&label=release"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-b08850.svg"></a>
-  <a href="https://github.com/HiroAlleyCat/adsb-to-wdgwars/blob/main/SECURITY.md"><img alt="Security" src="https://img.shields.io/badge/security-threat%20model-b08850.svg"></a>
+  <a href="https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/blob/main/SECURITY.md"><img alt="Security" src="https://img.shields.io/badge/security-threat%20model-b08850.svg"></a>
 </p>
 
 # Muninn
@@ -16,10 +18,10 @@ Convert ADS-B capture files (HackRF H4M, dump1090 / readsb, tar1090, VirtualRada
 
 Sibling repos in the WDGoWars feeder family:
 
-- [Heimdall](https://github.com/HiroAlleyCat/meshcore-to-wdgwars) — MeshCore LoRa feeder
-- [wigle-to-wdgwars](https://github.com/HiroAlleyCat/wigle-to-wdgwars) — WiGLE Wi-Fi/BLE feeder
-- [gungnir](https://github.com/HiroAlleyCat/gungnir) — shared HMAC transport library
-- [wdgwars-api-tester](https://github.com/HiroAlleyCat/wdgwars-api-tester) — API surface probe
+- [Heimdall](https://github.com/Yggdrasil-AI-labs/meshcore-to-wdgwars) — MeshCore LoRa feeder
+- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars) — WiGLE Wi-Fi/BLE feeder
+- [gungnir](https://github.com/Yggdrasil-AI-labs/gungnir) — shared HMAC transport library
+- [wdgwars-api-tester](https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester) — API surface probe
 
 > **Linked by WDGoWars as the recommended advanced converter.** The
 > WDGoWars portal includes a native importer for the common JSON
@@ -128,19 +130,19 @@ If `rtl_test` finds the dongle but no aircraft show up after 5 minutes, the ante
 
 You need **Python 3.10 or newer** and a working `pip`. Git is **not**
 required — Muninn's installer fetches its one dependency
-([gungnir](https://github.com/HiroAlleyCat/gungnir), the shared HMAC
+([gungnir](https://github.com/Yggdrasil-AI-labs/gungnir), the shared HMAC
 transport) over plain HTTPS.
 
 ### Option A — ZIP download (no git needed)
 
-1. Grab the ZIP from [the GitHub repo](https://github.com/HiroAlleyCat/adsb-to-wdgwars) (Code → Download ZIP) and unzip it.
+1. Grab the ZIP from [the GitHub repo](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) (Code → Download ZIP) and unzip it.
 2. Double-click **`setup.bat`** (Windows) or run **`./setup.sh`** (Mac/Linux). It installs dependencies and prompts for your API key.
 3. After that, double-click **`run.bat`** / **`run.sh`** to process anything in `input/`.
 
 ### Option B — clone with git
 
 ```bash
-git clone https://github.com/HiroAlleyCat/adsb-to-wdgwars
+git clone https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars
 cd adsb-to-wdgwars
 python3 -m venv .venv          # required on Bookworm / Homebrew (PEP 668)
 .venv/bin/pip install -r requirements.txt
@@ -383,7 +385,7 @@ rm  ~/.config/muninn/folders.json          (Mac/Linux)
 - `--save-key` refuses to write through a symlink.
 - No telemetry. Nothing leaves your machine unless `--upload` is set.
 
-Full threat model: [SECURITY.md](SECURITY.md). Found a vulnerability? Open a private security advisory via the repo's [Security tab](https://github.com/HiroAlleyCat/adsb-to-wdgwars/security/advisories).
+Full threat model: [SECURITY.md](SECURITY.md). Found a vulnerability? Open a private security advisory via the repo's [Security tab](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/security/advisories).
 
 ---
 
