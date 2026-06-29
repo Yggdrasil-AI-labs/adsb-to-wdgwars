@@ -98,6 +98,14 @@ def main():
     # Serve from this script's directory so static assets resolve no matter
     # where the user runs us from.
     web_dir = Path(__file__).resolve().parent
+    # ponytail: keep the served parser current by copying repo-root muninn.py into
+    # web/ on startup (mirrors CI pages.yml). Only when the root copy exists, so a
+    # standalone web/ bundle that ships its own muninn.py still serves.
+    # Upgrade: drop this if web/ ever imports muninn as an installed package.
+    root_muninn = web_dir.parent / "muninn.py"
+    if root_muninn.is_file():
+        import shutil
+        shutil.copyfile(root_muninn, web_dir / "muninn.py")
     import os
     os.chdir(web_dir)
 

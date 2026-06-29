@@ -17,6 +17,9 @@ htmlcov/
 dist/
 muninn-bundle.tar.gz
 
+# Generated: web parser is copied from root muninn.py (serve.py on startup, CI pages.yml on deploy)
+web/muninn.py
+
 # Generated outputs from converter
 *.wdgwars.json
 *.wdgwars.json.bak
