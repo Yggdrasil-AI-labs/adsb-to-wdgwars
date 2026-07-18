@@ -43,7 +43,7 @@ jobs:
       - name: Vendor gungnir into web/
         run: |
           set -euo pipefail
-          URL=$(grep -oE 'https://github.com/HiroAlleyCat/gungnir/archive/[^ ]+' requirements.txt | head -1)
+          URL=$(grep -oE 'https://github.com/Yggdrasil-AI-labs/gungnir/archive/[^ ]+' requirements.txt | head -1)
           if [ -z "$URL" ]; then
             echo "Could not find gungnir tarball URL in requirements.txt" >&2
             exit 1

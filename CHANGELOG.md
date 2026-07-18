@@ -4,6 +4,35 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.15] - 2026-07-18 - Wrapper-refreshing --update + org migration
+
+### Fixed
+
+- **`--update` now refreshes the six wrapper scripts** (`run`/`setup`/
+  `update` `.sh`/`.bat`) on the raw-download (ZIP install) path, closing the
+  family bug (documented 2026-06-04) where a fix living in a wrapper — like
+  v2.0.12's `run.bat` arg-forwarding repair — could never reach ZIP-installed
+  users through self-update. The list is hard-coded, not a remote manifest,
+  so the update path can never be steered into writing arbitrary filenames.
+  Wrapper download failures warn and continue; deleted wrappers are
+  respected; `.sh` wrappers get their exec bit restored on POSIX. Covered by
+  `tests/test_update_wrappers.py`. Shipped in the same shape in Heimdall
+  v0.4.5 and wigle-to-wdgwars v1.6.2.
+- **Org migration completed in code**: `GITHUB_REPO` (drives `--update`, the
+  daily version check, and the User-Agent), the gungnir pin URL in
+  `requirements.txt`, the raw URLs in all four setup/update wrappers, the
+  `pages.yml` gungnir-vendoring grep, and the SECURITY.md links (including a
+  security-advisories link that pointed at a wrong repo slug entirely) now
+  point at `Yggdrasil-AI-labs` instead of surviving on GitHub's rename
+  redirect from the old `HiroAlleyCat` owner.
+- **README told the truth again**: `--batch-size` default corrected to 1000
+  (the argparse value; 500 was the pre-v2.0 chunk size), the flag block now
+  lists `--preview` and all six `--schedule*` flags, and the "Range and feed
+  sanity checks" section has its port numbers (30104 Beast / 30001 raw) and
+  example warning output restored — both had been blank since the section
+  was written.
+- Dead code: unreachable trailing `return 0` in `main()` removed.
+
 ## [2.0.14] - 2026-06-22 - Scheduled periodic uploads no longer write to the decoder's runtime dir
 
 Bug-fix release. Periodic schedules (systemd timer, cron, and Windows

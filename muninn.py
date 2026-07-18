@@ -54,8 +54,8 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.14"
-GITHUB_REPO = "HiroAlleyCat/adsb-to-wdgwars"
+__version__ = "2.0.15"
+GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
 # Set by main() when --quiet is passed. Module-level so helpers can read it
@@ -2695,6 +2695,36 @@ def _fetch_raw(path: str, dest: Path) -> bool:
     return True
 
 
+WRAPPER_SCRIPTS = ("run.sh", "run.bat", "setup.sh", "setup.bat",
+                   "update.sh", "update.bat")
+
+
+def _refresh_wrappers(script_dir: Path) -> None:
+    """Refresh the shell/batch wrapper scripts next to muninn.py.
+
+    ZIP-installed users only receive wrapper fixes through --update (git
+    checkouts get them via `git pull`), so the raw-update path must ship
+    them too. The list is hard-coded rather than fetched from a remote
+    manifest so the update path can never be steered into writing
+    arbitrary filenames. A wrapper that fails to download is skipped
+    with a warning — the muninn.py update is never rolled back over a
+    wrapper. Wrappers the user deleted are respected and not re-planted.
+    """
+    for name in WRAPPER_SCRIPTS:
+        dest = script_dir / name
+        if not dest.exists():
+            continue
+        if not _fetch_raw(name, dest):
+            print(f"[muninn] wrapper {name} not refreshed; re-download "
+                  f"the release archive if it stays broken.", file=sys.stderr)
+            continue
+        if os.name == "posix" and name.endswith(".sh"):
+            try:
+                os.chmod(dest, 0o755)
+            except OSError:
+                pass
+
+
 def _pip_install_requirements(script_dir: Path) -> None:
     """Best-effort `python -m pip install -r requirements.txt` against the
     interpreter currently running muninn. Never fails the caller — prints
@@ -2759,8 +2789,10 @@ def _update_from_raw(script_dir: Path) -> int:
     new_version = m.group(1) if m else "?"
     if new_version == __version__:
         print(f"[muninn] already on the latest (v{__version__}). Refreshing "
-              f"requirements.txt in case a pinned dep moved.", file=sys.stderr)
+              f"requirements.txt and wrappers in case a pinned dep or "
+              f"wrapper fix moved.", file=sys.stderr)
         _fetch_raw("requirements.txt", script_dir / "requirements.txt")
+        _refresh_wrappers(script_dir)
         _pip_install_requirements(script_dir)
         return 0
     tmp = target.with_suffix(".py.new")
@@ -2776,6 +2808,7 @@ def _update_from_raw(script_dir: Path) -> int:
         return 1
     print(f"[muninn] updated v{__version__} to v{new_version}", file=sys.stderr)
     _fetch_raw("requirements.txt", script_dir / "requirements.txt")
+    _refresh_wrappers(script_dir)
     _pip_install_requirements(script_dir)
     print(f"[muninn] re-run muninn to pick up the new code "
           f"(the current process is still running the old version).",
@@ -3073,8 +3106,6 @@ def main() -> int:
         for d in _OUT_DIRS_WRITTEN:
             _open_folder(d)
     return upload_rc
-
-    return 0
 
 
 if __name__ == "__main__":

@@ -5,15 +5,15 @@
 - Reads a local ADS-B text file (or every supported file in a chosen folder).
 - Decodes aircraft records.
 - Writes a JSON output file next to the input, or in the configured output folder.
-- Optionally POSTs the records to `https://wdgwars.pl/api/upload/` (configurable).
+- Optionally POSTs the records to `https://wdgwars.pl/endpoint/upload/` (the server's Cloudflare-friendly alias of `/api/upload/`, default since v2.0.4; configurable).
 - Once per 24h, makes a single HEAD request to GitHub's releases API to check for a newer version. Cached locally in `~/.config/muninn/version-check.json`. Disable by deleting that file (it'll be re-checked but never sooner than daily).
 - On Windows, may create a desktop shortcut (`Muninn.lnk`) pointing at the local `muninn.py` script — only when the user explicitly says yes during first-run setup.
 
 ## What this tool **does not** do
 
 - ❌ **No telemetry or analytics.** The only outbound traffic is:
-  - `https://wdgwars.pl/api/upload/` — only when `--upload` is set. Hostname hardcoded; override with `--api-url`.
-  - `https://api.github.com/repos/HiroAlleyCat/adsb-to-wdgwars/releases/latest` — single HEAD request, **at most once per 24h**, to compare your local version to the latest tag. No identifiers, no machine info, no usage data — just a public-API call to read a release tag. Result is cached in `~/.config/muninn/version-check.json`. Delete that file to reset; set `__version__` to `"99.0.0"` or stub out `_check_for_update()` if you want to disable it entirely.
+  - `https://wdgwars.pl/endpoint/upload/` (alias of `/api/upload/`) — only when `--upload` is set. Hostname hardcoded; override with `--api-url`.
+  - `https://api.github.com/repos/Yggdrasil-AI-labs/adsb-to-wdgwars/releases/latest` — single HEAD request, **at most once per 24h**, to compare your local version to the latest tag. No identifiers, no machine info, no usage data — just a public-API call to read a release tag. Result is cached in `~/.config/muninn/version-check.json`. Delete that file to reset; set `__version__` to `"99.0.0"` or stub out `_check_for_update()` if you want to disable it entirely.
 - ❌ **No `eval`, `exec`, `os.system`, or `shell=True` subprocess calls.** No command-injection paths.
 - ❌ **No remote code download/execution.** Pure stdlib + optional `pyModeS` (open-source, MIT, well-known in the ADS-B community).
 - ❌ **No data sent anywhere except WDGoWars when explicitly opted in via `--upload`.**
@@ -61,7 +61,7 @@ If you suspect your key has leaked, rotate it on the WDGoWars site and run `--sa
 ## Reporting issues
 
 Found a security problem? Open a private security advisory on GitHub:
-1. Go to the [Security tab](https://github.com/HiroAlleyCat/muninn/security/advisories) of this repo
+1. Go to the [Security tab](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/security/advisories) of this repo
 2. Click "Report a vulnerability"
 3. Describe the issue + a proof of concept if possible
 

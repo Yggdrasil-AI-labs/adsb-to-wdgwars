@@ -3,7 +3,7 @@
 Per-format `(input, expected-Muninn-output)` pairs for cross-implementation
 parity testing. Each format directory contains the raw input fixture
 (copied verbatim from
-[adsb-to-wdgwars/examples/](https://github.com/HiroAlleyCat/adsb-to-wdgwars/tree/main/examples))
+[adsb-to-wdgwars/examples/](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars/tree/main/examples))
 and the JSON Muninn's reference parser produces for it.
 
 ## Shape
@@ -112,5 +112,5 @@ direct file upload to the portal.
 
 ## Source
 
-- Reference parser: [HiroAlleyCat/adsb-to-wdgwars](https://github.com/HiroAlleyCat/adsb-to-wdgwars) (Muninn, Python, MIT)
+- Reference parser: [Yggdrasil-AI-labs/adsb-to-wdgwars](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) (Muninn, Python, MIT)
 - Input fixtures: `adsb-to-wdgwars/examples/` in the same repo

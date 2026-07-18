@@ -302,9 +302,23 @@ Notes on `.sqb`:
 --dry-run          with --upload, build the request but don't send
 --key KEY          one-shot override of the stored API key
 --api-url URL      override the upload endpoint
---batch-size N     aircraft per upload chunk (default: 500)
+--batch-size N     aircraft per upload chunk (default: 1000)
+--preview          print the first 6 normalised records as JSON lines and
+                   exit (no file written, no upload — parser dry-run)
 --version          print Muninn's version
---update           pull the latest release (git pull if you cloned)
+--update           pull the latest release (git pull if you cloned; ZIP
+                   installs refresh muninn.py, requirements.txt, and the
+                   run/setup/update wrapper scripts)
+--schedule         install a scheduled upload task (interactive alone, or
+                   headless with the --schedule-* flags below)
+--unschedule       remove every Muninn-managed scheduled task
+--schedule-mode M  watch (daemon watching a folder) or periodic (every N
+                   minutes) for headless --schedule
+--schedule-input D decoder output directory baked into the scheduled task
+--schedule-glob G  file pattern for the scheduled task (default guessed
+                   from the directory contents)
+--schedule-interval N  minutes between periodic runs (default 5, 1-60)
+--schedule-dry-run install the schedule with --dry-run baked in
 -q, --quiet        suppress informational output (banners, format/decoded
                    notices, range + dump1090 warnings). Errors still print.
 --no-version-check skip the daily GitHub release check entirely (use for
@@ -325,17 +339,26 @@ Muninn runs two automatic checks every time it processes a file.
 
 ### dump1090 network input check
 
-On startup, Muninn probes  (Beast input) and  (raw input). If either port is open it prints a warning before processing anything:
+On startup, Muninn probes localhost port 30104 (Beast input, `--net-bi-port`) and port 30001 (raw Mode-S input, `--net-ri-port`). If either port is open it prints a warning before processing anything:
 
+```
+[muninn] WARNING: dump1090 network input port(s) are open on localhost:
+[muninn]   port 30104: Beast input (--net-bi-port) -- accepts remote aircraft feeds
+[muninn]   Remote aircraft data may be mixing with locally received planes.
+```
 
-
-The most common cause of implausibly large reception ranges (aircraft 1000+ km apart) is dump1090 running with  while a piaware or FlightAware feeder is also active, silently injecting remote aircraft into the local stream. No data is sent or received during the probe — it is a single connect attempt per port.
+The most common cause of implausibly large reception ranges (aircraft 1000+ km apart) is dump1090 running with `--net` while a piaware or FlightAware feeder is also active, silently injecting remote aircraft into the local stream. No data is sent or received during the probe — it is a single connect attempt per port.
 
 ### Aircraft range check
 
 After decoding, Muninn checks whether any aircraft positions are beyond 500 km from the median position of the capture — roughly the 1090 MHz radio horizon at cruise altitude. Outliers are flagged with their ICAO, callsign, and distance:
 
-
+```
+[muninn] WARNING: 2 of 41 aircraft (5%) are >500 km from the position centroid — possible network-fed remote data mixed with local reception.
+[muninn]   Centroid: 41.4600, -82.1800
+[muninn]   outlier: a1b2c3 UAL123 @ 51.4700,-0.4543 — 5642 km from centroid
+[muninn]   If unexpected, check whether dump1090 has --net enabled with a remote Beast/piaware feed active on the same machine.
+```
 
 No records are removed — these are warnings only. If you are deliberately aggregating data from multiple locations, you can ignore them.
 

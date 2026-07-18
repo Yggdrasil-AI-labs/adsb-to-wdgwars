@@ -76,7 +76,7 @@ fi
 
 echo
 echo "[2/4] Refreshing requirements.txt from GitHub..."
-"$VENV_PY" -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/adsb-to-wdgwars/main/requirements.txt', 'requirements.txt')"
+"$VENV_PY" -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/Yggdrasil-AI-labs/adsb-to-wdgwars/main/requirements.txt', 'requirements.txt')"
 
 echo
 echo "[3/4] Installing dependencies..."
