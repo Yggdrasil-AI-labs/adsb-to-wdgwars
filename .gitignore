@@ -44,3 +44,8 @@ api.key
 !examples/*.json
 !web/gungnir/*.json
 !parity-fixtures/**/*.json
+
+# Generated: synthetic sqb fixture is rebuilt in place by tests/test_sqb_input.py
+# (and by tests/fixtures/build_sample_sqb.py) - tracking it meant every test
+# run dirtied the tree; same rule as the generated web parser above.
+tests/fixtures/sample.sqb
