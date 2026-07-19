@@ -7,7 +7,7 @@
     "alt_ft": 40000,
     "speed_kt": 393,
     "heading": 286,
-    "first_seen": "2026-05-31 16:03:35",
+    "first_seen": "2026-07-19 22:27:55",
     "type": "ADSB"
   },
   {
@@ -18,7 +18,7 @@
     "alt_ft": 34000,
     "speed_kt": 368,
     "heading": 291,
-    "first_seen": "2026-05-31 16:03:35",
+    "first_seen": "2026-07-19 22:27:55",
     "type": "ADSB"
   },
   {
@@ -29,7 +29,7 @@
     "alt_ft": 34000,
     "speed_kt": 362,
     "heading": 302,
-    "first_seen": "2026-05-31 16:03:35",
+    "first_seen": "2026-07-19 22:27:55",
     "type": "ADSB"
   },
   {
@@ -40,7 +40,7 @@
     "alt_ft": 35000,
     "speed_kt": 540,
     "heading": 96,
-    "first_seen": "2026-05-31 16:03:35",
+    "first_seen": "2026-07-19 22:27:55",
     "type": "ADSB"
   },
   {
@@ -51,7 +51,7 @@
     "alt_ft": 8450,
     "speed_kt": 250,
     "heading": 233,
-    "first_seen": "2026-05-31 16:03:35",
+    "first_seen": "2026-07-19 22:27:55",
     "type": "ADSB"
   },
   {
@@ -62,7 +62,29 @@
     "alt_ft": 33000,
     "speed_kt": 522,
     "heading": 67,
-    "first_seen": "2026-05-31 16:03:35",
+    "first_seen": "2026-07-19 22:27:55",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A2D92A",
+    "callsign": "FDX1234",
+    "lat": 41.5,
+    "lon": -81.5,
+    "alt_ft": 36000,
+    "speed_kt": 410,
+    "heading": 180,
+    "first_seen": "2026-07-19 22:27:55",
+    "type": "ADSB"
+  },
+  {
+    "icao": "A71234",
+    "callsign": "UPS5678",
+    "lat": 41.4,
+    "lon": -81.7,
+    "alt_ft": 28000,
+    "speed_kt": 305,
+    "heading": 270,
+    "first_seen": "2026-07-19 22:27:55",
     "type": "ADSB"
   }
 ]

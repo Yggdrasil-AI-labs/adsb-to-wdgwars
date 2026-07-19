@@ -86,6 +86,44 @@ class AdsbRegressionTests(unittest.TestCase):
         self.assertNotIn("networks", payload)
         self.assertEqual(len(payload["aircraft"]), 1)
 
+    def test_mayhem_spd_label_ground_speed(self):
+        """Some PortaPack/H4M Mayhem firmware label ground speed "Spd:NNN"
+        instead of GS:/TAS:/IAS:. Confirmed against a real H4M ADSB.TXT
+        capture 2026-07-19: all 113 aircraft decoded with gs:0 because
+        "Spd:" was not matched by _MAYHEM_SPEED. Lock the label in."""
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        )
+        f.write("8DA2D92A990D810DE80C056DE73E ICAO:A2D92A FDX1234 "
+                "Alt:36000 Lat:41.5000000 Lon:-81.5000000 Type:1 "
+                "Hdg:180 Spd:410 Vrate:0 Sil:2\n")
+        f.close()
+        rows = muninn.parse_mayhem(Path(f.name))
+        self.assertIn("A2D92A", rows)
+        self.assertEqual(rows["A2D92A"]["speed_kt"], 410)
+        self.assertEqual(rows["A2D92A"]["callsign"], "FDX1234")
+
+    def test_mayhem_leading_timestamp_column(self):
+        """Some H4M firmware prepends a YYYYMMDDHHMMSS timestamp column to
+        each line. Detection sniffs s[:14] (alnum either way) and all field
+        extraction is label-anchored, so the timestamped variant must still
+        route to mayhem and parse the callsign/speed without picking up the
+        timestamp as a bare token."""
+        line = ("19800121210654 8DA71234990D820DE80C056DE73E ICAO:A71234 "
+                "UPS5678 Alt:28000 Lat:41.4000000 Lon:-81.7000000 Type:1 "
+                "Hdg:270 Spd:305 Vrate:-64 Sil:2\n")
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        )
+        f.write(line)
+        f.close()
+        self.assertEqual(muninn.detect_format(Path(f.name)), "mayhem")
+        rows = muninn.parse_mayhem(Path(f.name))
+        self.assertIn("A71234", rows)
+        self.assertEqual(rows["A71234"]["speed_kt"], 305)
+        self.assertEqual(rows["A71234"]["callsign"], "UPS5678")
+        self.assertEqual(rows["A71234"]["alt_ft"], 28000)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

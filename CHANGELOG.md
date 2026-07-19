@@ -4,6 +4,34 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.16] - 2026-07-19 - PortaPack/H4M Mayhem "Spd:" ground-speed label + leading timestamp column
+
+Bug-fix release. The PortaPack Mayhem ADSB.TXT parser's speed regex only
+matched `GS:` / `TAS:` / `IAS:`. Some Portapack/H4M Mayhem firmware variants
+label ground speed as `Spd:NNN` instead. Confirmed against a real H4M
+ADSB.TXT capture on 2026-07-19: all 113 decoded aircraft came through with
+`gs:0` because `Spd:` was never matched. The same firmware also prepends a
+`YYYYMMDDHHMMSS` timestamp column to each line; because detection sniffs
+`s[:14]` (alnum with or without the timestamp) and every field is
+label-anchored, that variant already routed and parsed — this release adds
+coverage to lock it in.
+
+### Fixed
+
+- `_MAYHEM_SPEED` now accepts `Spd:` alongside `GS:` / `TAS:` / `IAS:`, so
+  ground speed decodes on the H4M firmware variants that use that label
+  instead of silently reporting 0.
+
+### Added
+
+- `tests/test_adsb_regression.py` — two regression tests: the `Spd:` label
+  populates `speed_kt`, and the leading-timestamp variant still detects as
+  `mayhem` and parses callsign/speed/altitude without mistaking the
+  timestamp column for a bare callsign token.
+- `parity-fixtures/mayhem/sample.txt` + `examples/mayhem_sample.txt` — two
+  new fixture lines (a `Spd:` line and a timestamped line); the mayhem
+  parity artifact was regenerated against v2.0.16 (now 8 records).
+
 ## [2.0.15] - 2026-07-18 - Wrapper-refreshing --update + org migration
 
 ### Fixed

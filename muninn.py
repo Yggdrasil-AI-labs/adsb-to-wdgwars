@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.15"
+__version__ = "2.0.16"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1263,10 +1263,15 @@ def parse_json(path: Path) -> dict[str, dict]:
 
 
 # ── PortaPack Mayhem ADSB.TXT ───────────────────────────────────────────────
-# Format: <raw_hex> ICAO:<hex6> [Squawk:NNNN] [<CALLSIGN>] [Alt:N] [Lat:F Lon:F]
-#         [Type:N Hdg:N (GS|TAS|IAS):N Vrate:N] [Sil:N]
+# Format: [<ts>] <raw_hex> ICAO:<hex6> [Squawk:NNNN] [<CALLSIGN>] [Alt:N]
+#         [Lat:F Lon:F] [Type:N Hdg:N (GS|TAS|IAS|Spd):N Vrate:N] [Sil:N]
 # Source: portapack-mayhem firmware/application/apps/ui_adsb_rx.cpp::ADSBLogger
 # Each line is one decoded frame; data accumulates per ICAO across lines.
+# Some H4M firmware variants label ground speed "Spd:" instead of "GS:" and
+# prepend a YYYYMMDDHHMMSS timestamp column; both are handled here (confirmed
+# against a real H4M ADSB.TXT capture 2026-07-19 — all 113 aircraft had been
+# decoding as gs:0 because "Spd:" was not matched). All field extraction is
+# label-anchored, so the leading timestamp column parses without extra work.
 import re as _re
 
 _MAYHEM_ICAO   = _re.compile(r"\bICAO:([0-9A-Fa-f]{6})\b")
@@ -1274,7 +1279,7 @@ _MAYHEM_ALT    = _re.compile(r"\bAlt:(-?\d+)\b")
 _MAYHEM_LAT    = _re.compile(r"\bLat:(-?\d+\.\d+)\b")
 _MAYHEM_LON    = _re.compile(r"\bLon:(-?\d+\.\d+)\b")
 _MAYHEM_HDG    = _re.compile(r"\bHdg:(\d+)\b")
-_MAYHEM_SPEED  = _re.compile(r"\b(?:GS|TAS|IAS):(\-?\d+)\b")
+_MAYHEM_SPEED  = _re.compile(r"\b(?:GS|TAS|IAS|Spd):(\-?\d+)\b")
 _MAYHEM_SQUAWK = _re.compile(r"\bSquawk:(\d{4})\b")
 # Callsign is a bare token (no Key: prefix), 3-8 chars of letters/digits,
 # usually between Squawk/ICAO and Alt. We extract it positionally below.

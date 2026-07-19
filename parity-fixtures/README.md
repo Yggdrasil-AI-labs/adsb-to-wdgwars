@@ -37,14 +37,17 @@ fixtures/
   vrs/       sample.json       + expected.muninn.json   (12 records)
   sbs1/      sample.txt        + expected.muninn.json   ( 3 records)
              real.txt          + real.muninn.json       (10 records)
-  mayhem/    sample.txt        + expected.muninn.json   ( 6 records)
+  mayhem/    sample.txt        + expected.muninn.json   ( 8 records)
   ndjson/    sample.json       + expected.muninn.json   (12 records)
   tar1090/   sample.json.gz    + expected.muninn.json   (12 records)
   dump1090/  real.json         + real.muninn.json       (12 records)
 ```
 
-Generated against Muninn v2.0.3 on 2026-05-31. To regenerate against a
-newer Muninn:
+Generated against Muninn v2.0.3 on 2026-05-31; the `mayhem` pair was
+regenerated against v2.0.16 on 2026-07-19 when two records were added
+covering the `Spd:` ground-speed label and the leading-timestamp column
+that some H4M firmware variants emit. To regenerate against a newer
+Muninn:
 
 ```python
 import muninn, json
