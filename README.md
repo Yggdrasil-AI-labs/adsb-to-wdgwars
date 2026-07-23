@@ -35,33 +35,6 @@ Sibling repos in the WDGoWars feeder family:
 > already speaks a dialect the portal accepts, you can skip Muninn;
 > if not, you're in the right place.
 
-> **Note on v1.9.0 (Zigbee).** v1.9.0 added 802.15.4 / Zigbee capture
-> support and was withdrawn the next day in v1.10.0. The feature
-> rested on a misread of the WDGoWars mesh channel (which is for
-> **Meshcore / LoRa**, not Zigbee). See the
-> [v1.10.0 CHANGELOG entry](CHANGELOG.md#1100--2026-05-24--retract-v190-zigbee-support)
-> for the full story. If you're on v1.9.0, please upgrade to v1.10.0.
-
-> **Note on v1.11.0 (endpoint switch).** v1.11.0 briefly moved the
-> upload from `/api/upload/` (HMAC envelope) to `/api/upload-csv`
-> (multipart) after misreading a server-side regression as a path
-> deprecation. The HMAC envelope at `/api/upload/` is the canonical
-> aircraft route and is not going away. v1.11.1 reverts that and
-> also fixes a latent ICAO-leading-zero bug that was silently
-> dropping valid Mode-S addresses on import. If you're on v1.11.0,
-> please upgrade to v1.11.1.
-
-> **Note on the 2026-05-30 star reset.** Muninn had 10 stargazers
-> and 1 watcher before a maintainer mistake (flipping the repo
-> visibility private→public to try to bust a stale GitHub
-> contributor cache) reset both counts to zero. GitHub Support
-> confirmed this is documented, intentional behavior on any
-> visibility change and the counts can't be restored on their end.
-> The repo itself, releases, history, and code are otherwise
-> unaffected. If you previously starred or watched Muninn and
-> wouldn't mind doing so again, it would be appreciated — no
-> hard feelings if you'd rather not.
-
 **Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
 formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
 supported — WDGoWars is a wardriving game, importing thousands of other
