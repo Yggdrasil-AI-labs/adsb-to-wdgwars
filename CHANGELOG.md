@@ -4,6 +4,31 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.17] - 2026-07-23 - Generic CSV: stop letting a degraded row clobber good data
+
+Bug-fix release. Reported by piratepat_ on Discord: a uConsole/Watch Dogs Go
+generic-CSV dump had multiple rows for the same aircraft, and `parse_csv`
+collapsed them with a blind `rows[icao] = rec` per row — whichever row was
+iterated last won outright, regardless of data quality. Row order in a
+generic CSV isn't guaranteed to match chronological order per-ICAO either;
+in the reported sample the last row for the affected aircraft was an older,
+degraded observation (`speed_kt=0`, `heading=0`) that overwrote a
+better, later-timestamped row earlier in the file, silently discarding good
+velocity data. The AVR and SBS-1 parsers already merge fields incrementally
+(only overwrite alt/speed/heading/callsign when the new value is truthy) —
+the generic CSV path was the one parser that didn't follow that pattern.
+
+### Fixed
+
+- `parse_csv` / `_ingest_csv_row` now merge per-ICAO like `parse_avr` and
+  `parse_sbs1` already do, instead of replacing the whole record on every
+  row for that ICAO.
+
+### Added
+
+- `tests/test_adsb_regression.py::test_generic_csv_does_not_clobber_with_degraded_row`
+  — locks in the fix using the reported sample data.
+
 ## [2.0.16] - 2026-07-19 - PortaPack/H4M Mayhem "Spd:" ground-speed label + leading timestamp column
 
 Bug-fix release. The PortaPack Mayhem ADSB.TXT parser's speed regex only

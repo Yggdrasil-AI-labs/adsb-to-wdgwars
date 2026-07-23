@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.0.16"
+__version__ = "2.0.17"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1582,7 +1582,16 @@ def parse_csv(path: Path, fmt: str | None = None) -> dict[str, dict]:
 
         for r in reader:
             _ingest_csv_row(r, fields, rows)
-    return rows
+
+    out: dict[str, dict] = {}
+    for icao, e in rows.items():
+        rec = _norm_record(icao=icao, callsign=e["callsign"],
+                          lat=e["lat"], lon=e["lon"],
+                          alt_ft=e["alt_ft"], speed_kt=e["speed_kt"],
+                          heading=e["heading"], first_seen=e["first_seen"])
+        if rec:
+            out[icao] = rec
+    return out
 
 
 def _ingest_csv_row(r: list[str], fields: list[str], rows: dict[str, dict]):
@@ -1607,17 +1616,34 @@ def _ingest_csv_row(r: list[str], fields: list[str], rows: dict[str, dict]):
         lon = float(d["lon"]) if "lon" in d else None
     except ValueError:
         return
-    rec = _norm_record(
-        icao=icao,
-        callsign=d.get("callsign", ""),
-        lat=lat, lon=lon,
-        alt_ft=_coerce_int(d.get("alt_ft") or d.get("alt") or d.get("altitude") or 0),
-        speed_kt=_coerce_int(d.get("speed_kt") or d.get("speed") or d.get("gs") or 0),
-        heading=_coerce_int(d.get("heading") or d.get("track") or d.get("cog") or 0),
-        first_seen=d.get("first_seen") or d.get("timestamp"),
-    )
-    if rec:
-        rows[icao] = rec
+    alt_ft = _coerce_int(d.get("alt_ft") or d.get("alt") or d.get("altitude") or 0)
+    speed_kt = _coerce_int(d.get("speed_kt") or d.get("speed") or d.get("gs") or 0)
+    heading = _coerce_int(d.get("heading") or d.get("track") or d.get("cog") or 0)
+    callsign = d.get("callsign", "")
+    first_seen = d.get("first_seen") or d.get("timestamp")
+
+    # Merge like the AVR/SBS-1 parsers do: a later row for the same ICAO with
+    # a degraded/partial decode (e.g. speed_kt=0) must not clobber a good
+    # value an earlier row already established. Row order in a generic CSV
+    # dump isn't guaranteed to be chronological per-ICAO either, so blind
+    # last-row-wins (the old behavior) could silently pick a worse record.
+    entry = rows.setdefault(icao, {"icao": icao, "callsign": "",
+                                    "lat": None, "lon": None,
+                                    "alt_ft": 0, "speed_kt": 0,
+                                    "heading": 0, "first_seen": None})
+    if callsign:
+        entry["callsign"] = callsign
+    if lat is not None and lon is not None:
+        entry["lat"] = lat
+        entry["lon"] = lon
+    if alt_ft:
+        entry["alt_ft"] = alt_ft
+    if speed_kt:
+        entry["speed_kt"] = speed_kt
+    if heading:
+        entry["heading"] = heading
+    if first_seen:
+        entry["first_seen"] = first_seen
 
 
 # ── WDGoWars uploader ───────────────────────────────────────────────────────

@@ -103,6 +103,36 @@ class AdsbRegressionTests(unittest.TestCase):
         self.assertEqual(rows["A2D92A"]["speed_kt"], 410)
         self.assertEqual(rows["A2D92A"]["callsign"], "FDX1234")
 
+    def test_generic_csv_does_not_clobber_with_degraded_row(self):
+        """Reported by piratepat_ (Discord) 2026-07-23: a uConsole/Watch Dogs
+        Go generic-CSV dump had three rows for the same ICAO, and the row
+        order wasn't chronological (an earlier-timestamped row landed later
+        in the file). The old parse_csv did a blind `rows[icao] = rec` per
+        row, so whichever row was iterated last won outright — in the real
+        sample that was a degraded observation with speed_kt=0/heading=0,
+        silently discarding the good velocity data from an earlier row.
+        Fixed to merge like parse_avr/parse_sbs1 already do: only overwrite
+        alt_ft/speed_kt/heading/callsign when the new row's value is
+        truthy."""
+        f = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8"
+        )
+        f.write(
+            "timestamp,icao,callsign,lat,lon,alt_ft,speed_kt,heading,squawk\n"
+            "1784767754,ADD667,AAL1045,28.7092,-81.42237,39000,428,344,3336\n"
+            "1784768498,A38C60,,28.46683,-81.48053,11375,293,349,3054\n"
+            "1784767763,A36980,,28.20703,-81.75858,38000,450,315,\n"
+            "1784767718,ADD667,AAL1045,28.64015,-81.39927,39000,431,344,\n"
+            "1784767718,ADD667,AAL1045,28.64015,-81.39927,39000,0,0,\n"
+        )
+        f.close()
+        rows = muninn.parse_csv(Path(f.name))
+        self.assertEqual(rows["ADD667"]["speed_kt"], 431)
+        self.assertEqual(rows["ADD667"]["heading"], 344)
+        self.assertEqual(rows["ADD667"]["lat"], 28.64015)
+        self.assertEqual(rows["A38C60"]["speed_kt"], 293)
+        self.assertEqual(rows["A36980"]["heading"], 315)
+
     def test_mayhem_leading_timestamp_column(self):
         """Some H4M firmware prepends a YYYYMMDDHHMMSS timestamp column to
         each line. Detection sniffs s[:14] (alnum either way) and all field
