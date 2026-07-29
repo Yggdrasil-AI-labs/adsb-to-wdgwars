@@ -4,6 +4,62 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.3] - 2026-07-29 - watch mode gets the v2.1.2 treatment
+
+Bug-fix release, closing the item the v2.1.2 notes deferred as "a
+watch-mode-against-a-rolling-file issue found the same night is tracked
+separately." The reported symptom was "watch mode never sees the rolling
+file," but the file-change detection was never the problem — watch mode's
+size+mtime signature has always caught in-place rewrites. The actual
+failure chain: watch mode wrote both its per-file output AND its
+`.adsb-state.json` state file into the watched directory itself, and the
+output write ran *before* the upload. Pointed at a root-owned decoder
+runtime dir (`/run/readsb` — the exact directory `_guess_decoder_dirs()`
+suggests), every cycle decoded cleanly, hit `PermissionError` on the
+write, logged an error nobody sees (no persistent journal on Raspberry Pi
+OS), and never reached the upload. Installed cleanly, ran on schedule, did
+nothing.
+
+### Fixed
+
+- **Watch mode now uses the same output-path resolution as everything
+  else**: `--out-dir` > the output folder saved by the first-run prompt /
+  `--setup` > beside the input, as a last resort — and honors `--no-save`
+  with `--upload`. Previously it always wrote beside the input
+  (`_watch_out_path`).
+- **A failed local write no longer blocks the upload in watch mode.** The
+  write goes through `_write_local_output` (v2.1.2's helper): warn loudly,
+  keep the records, upload anyway. Without `--upload` the file is left
+  unmarked so the next cycle retries. Upload now happens even when the
+  watched directory is read-only.
+- **The watch state file falls back to the config dir when the watched
+  directory isn't writable** (`_resolve_watch_state_path`, one file per
+  watched dir, keyed by a path hash). Writable dirs keep the existing
+  in-dir `.adsb-state.json` behavior and its S2083 symlink check. A
+  state-write failure also no longer counts as a per-file error — dedup
+  degrades to in-memory for the run, with a single warning.
+
+### Changed
+
+- **The `--schedule` prompt no longer asks users to classify their own
+  decoder.** The folder question now comes first, and the watch/periodic
+  choice is preselected from the file pattern: a fixed filename with no
+  wildcard (`aircraft.json`) is a rolling snapshot, so periodic is offered
+  as the default with a one-line explanation; wildcard patterns keep watch
+  as the default. Picking watch against a rolling file still works (and
+  now actually uploads, see above) but prints a note that periodic is the
+  intended mode. The principle, learned from watching a real first-time
+  install: if the software can detect it, it must not ask the user to
+  classify it.
+
+### Added
+
+- `tests/test_watch_mode.py` — output resolution order in watch mode
+  (`--out-dir` > configured folder > beside input, `--no-save` handling),
+  state-path fallback (writable dir keeps in-dir state, unwritable dir
+  falls back to a stable per-directory file under the config dir), and the
+  rolling-file pattern detection driving the new prompt preselection.
+
 ## [2.1.2] - 2026-07-25 - a failed local write no longer kills your upload
 
 Bug-fix release. Found live: a user ran the README's own one-shot example,

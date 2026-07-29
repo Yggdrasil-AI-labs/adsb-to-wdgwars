@@ -50,7 +50,8 @@ If you suspect your key has leaked, rotate it on the WDGWars site and run `--sav
 
 ## Watch mode
 
-- The state file `.adsb-state.json` lives in the watched directory and tracks `filename → size:mtime` signatures. It is **not** itself a secret (no API keys, no aircraft data — just file metadata). The write is confined to the watched directory and refuses a symlinked state file, so it can't be redirected elsewhere.
+- The state file `.adsb-state.json` lives in the watched directory when that directory is writable, and tracks `filename → size:mtime` signatures. It is **not** itself a secret (no API keys, no aircraft data — just file metadata). The in-dir write is confined to the watched directory and refuses a symlinked state file, so it can't be redirected elsewhere. When the watched directory is **not** writable (a decoder's root-owned runtime dir like `/run/readsb`), the state moves to `watch-state-<12-hex-of-sha256(dir)>.json` under the muninn config dir instead of failing every cycle (v2.1.3, `_resolve_watch_state_path`) — same metadata, a location the user owns, filename derived from the resolved dir path so two watched dirs never collide.
+- Watch mode's per-file output follows the same resolution order as one-shot mode (`--out-dir` > configured output folder > beside the input, last) and the same failed-write rules as `_write_local_output` above: a failed local write warns and never blocks an in-flight `--upload` (v2.1.3; previously watch mode always wrote beside the input, *before* the upload, so a read-only watched dir silently killed every upload).
 - The watch loop **only reads files matching `--watch-glob`** (default `*.txt`). It explicitly skips:
   - Dotfiles (anything starting with `.`)
   - The tool's own `.wdgwars.json` outputs (no infinite loop)
@@ -81,7 +82,7 @@ Please do **not** post security issues to the public issue tracker. Aim is to gi
 | MITM on upload | Explicit `ssl.create_default_context()` — system trust store, hostname verification, TLS 1.2+ |
 | Command injection | No `shell=True`, no `eval`, no `os.system`. All file I/O via `pathlib`/`open()`. |
 | Injection into persisted scheduler entries | Capture dir + glob baked into systemd/cron/schtasks entries are quoted (`shlex.quote` for cron, double-quoting for systemd/schtasks) and the glob is whitelisted (`_validate_glob`); newlines/NUL rejected so no second directive can be injected |
-| Watch state-file path traversal | The `.adsb-state.json` write is confined to the watched directory and refuses a symlinked state file (`_state_path_for`) |
+| Watch state-file path traversal | The in-dir `.adsb-state.json` write is confined to the watched directory and refuses a symlinked state file (`_state_path_for`); the read-only-dir fallback filename is a hash of the resolved dir path, not attacker-nameable (`_resolve_watch_state_path`) |
 | `.sqb` filename overriding read-only DB open | SQLite opened via a `pathname2url`-encoded read-only URI (`_sqlite_ro_uri`), so a name like `x?mode=rwc.sqb` can't flip the mode |
 | Redirected decoder dir under world-writable `/tmp` | Symlinked candidate directories are excluded from suggestions (`_guess_decoder_dirs`) |
 | Replay attacks against WDGWars | HMAC-SHA256-signed envelope with a `secrets.token_hex(8)` nonce per request — server rejects replays |

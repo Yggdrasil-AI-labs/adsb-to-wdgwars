@@ -213,6 +213,8 @@ Two modes:
 - **Watch** — long-running daemon that uploads new captures as soon as they appear. Best for decoders that write a new file per capture session (tar1090 chunks, NDJSON sessions, MeshCore exports).
 - **Periodic** — runs every N minutes (1–60) against the current state of the folder. Best for decoders that rewrite a single rolling file in place (dump1090-fa, readsb, VRS).
 
+You don't have to know which one fits: the prompt asks for the folder first and preselects the right mode from what it finds there (a lone `aircraft.json` means a rolling snapshot, so periodic; wildcard patterns mean new files appear over time, so watch). Watch mode's local output follows the same resolution order as everything else (`--out-dir` > your configured output folder > beside the input), and a read-only decoder dir like `/run/readsb` no longer blocks its uploads — see the note under "One-shot" above.
+
 Per-platform mechanism, all user-scope (no sudo):
 
 | Platform | Mechanism |

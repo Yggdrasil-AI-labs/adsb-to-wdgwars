@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.1.2"
+__version__ = "2.1.3"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -88,6 +88,7 @@ def _open_folder(p) -> bool:
 import argparse
 import csv
 import getpass
+import hashlib
 import json
 import logging
 import os
@@ -1725,16 +1726,55 @@ def _convert_one(path: Path, fmt_override: str | None, csv_format: str | None,
     return list(rows.values())
 
 
+def _watch_out_path(path: Path, args) -> Path | None:
+    """Output path for one watched file, or None to skip the local write.
+
+    Same resolution order as _process_one_file minus --out/--stdout (both
+    single-shot concepts that don't fit a multi-file loop): --out-dir >
+    the configured output folder > beside the input, as a last resort.
+    Before v2.1.3 watch mode always wrote beside the input, which fails
+    every cycle against a root-owned decoder runtime dir like /run/readsb,
+    the same trap _process_one_file got fixed for in v2.1.2.
+    """
+    if args.upload and getattr(args, "no_save", False):
+        return None
+    name = f"{path.stem}.wdgwars.json"
+    if getattr(args, "out_dir", None):
+        return _user_path(args.out_dir, label="--out-dir") / name
+    configured = _default_out_dir_from_prefs()
+    if configured is not None:
+        return (configured / name).resolve()
+    return (path.parent / name).resolve()
+
+
+def _resolve_watch_state_path(watch_directory: Path) -> Path:
+    """Where watch mode keeps its processed-file signatures.
+
+    Inside the watched dir when it's writable, unchanged behavior (and the
+    S2083 symlink check in _state_path_for still applies). When it isn't,
+    /run/readsb and friends being root-owned tmpfs, fall back to a
+    per-directory file under the muninn config dir instead of failing the
+    state write on every single cycle.
+    """
+    if os.access(str(watch_directory), os.W_OK):
+        return _state_path_for(watch_directory)
+    digest = hashlib.sha256(
+        str(watch_directory.resolve()).encode("utf-8")).hexdigest()[:12]
+    fallback = _config_dir() / f"watch-state-{digest}.json"
+    print(f"[watch] {watch_directory} is not writable -- keeping state in "
+          f"{fallback}", file=sys.stderr)
+    return fallback
+
+
 def watch_dir(watch_dir: Path, args) -> int:
     """Poll the directory for new/changed files matching --watch-glob.
-    For each new file: convert → write JSON next to it → optionally upload.
+    For each new file: convert → write JSON → optionally upload.
     State (signatures of processed files) is kept in .adsb-state.json in the
-    watched dir so restarts don't re-process everything."""
+    watched dir so restarts don't re-process everything — or under the
+    config dir when the watched dir isn't writable."""
     if not watch_dir.is_dir():
         sys.exit(f"--watch requires a directory, got: {watch_dir}")
-    # Confine the state file to the watched dir; rejects a symlinked
-    # .adsb-state.json that would redirect the write elsewhere (S2083).
-    state_path = _state_path_for(watch_dir)
+    state_path = _resolve_watch_state_path(watch_dir)
     seen: dict[str, str] = {}
     try:
         seen = json.loads(state_path.read_text())
@@ -1759,6 +1799,7 @@ def watch_dir(watch_dir: Path, args) -> int:
           f"for {args.watch_glob!r} (Ctrl+C to stop)", file=sys.stderr)
     print(f"[watch] {len(seen)} files already processed", file=sys.stderr)
 
+    state_write_warned = False
     try:
         while True:
             cycle_t0 = time.monotonic()
@@ -1779,9 +1820,18 @@ def watch_dir(watch_dir: Path, args) -> int:
                     records = _convert_one(f, args.format if args.format != "auto" else None,
                                           args.csv_format, sqb_tz=args.sqb_tz)
                     print(f"[watch]   decoded {len(records)} aircraft", file=sys.stderr)
-                    out_path = f.parent / f"{f.stem}.wdgwars.json"
-                    out_path.write_text(json.dumps(_to_dump1090_fa(records), indent=2))
-                    print(f"[watch]   wrote {out_path}", file=sys.stderr)
+                    out_path = _watch_out_path(f, args)
+                    if out_path is not None:
+                        wrote = _write_local_output(
+                            out_path, _to_dump1090_fa(records),
+                            upload_requested=bool(args.upload))
+                        if wrote:
+                            print(f"[watch]   wrote {out_path}", file=sys.stderr)
+                        elif not args.upload:
+                            # The local write WAS the point of this run.
+                            # _write_local_output already explained; leave
+                            # the file unmarked so the next cycle retries.
+                            continue
                     if args.upload and records:
                         rc = upload(records, api_key, args.api_url,
                                    batch_size=args.batch_size,
@@ -1792,8 +1842,18 @@ def watch_dir(watch_dir: Path, args) -> int:
                             continue  # don't mark as seen if upload failed
                     seen[str(f.name)] = sig
                     # Persist after every successful file so we don't lose
-                    # progress on crash / Ctrl+C
-                    state_path.write_text(json.dumps(seen, indent=2))
+                    # progress on crash / Ctrl+C. A state-write failure must
+                    # not take down the loop — dedup just degrades to
+                    # in-memory for this run.
+                    try:
+                        state_path.write_text(json.dumps(seen, indent=2))
+                    except OSError as e:
+                        if not state_write_warned:
+                            print(f"[watch]   WARNING: could not persist "
+                                  f"watch state to {state_path} ({e}); "
+                                  f"already-processed tracking is in-memory "
+                                  f"only for this run", file=sys.stderr)
+                            state_write_warned = True
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
@@ -2089,6 +2149,16 @@ def _guess_glob_for_dir(d: Path) -> str:
     except (OSError, PermissionError):
         pass
     return "aircraft.json"
+
+
+def _is_rolling_file_pattern(glob: str) -> bool:
+    """True when the file pattern names one fixed file rather than a family
+    of files — i.e. a decoder that rewrites a rolling snapshot in place
+    (readsb/dump1090-fa aircraft.json). No wildcard means no new file will
+    ever "appear", so periodic mode is the right schedule for it and the
+    interactive prompt preselects accordingly instead of asking the user to
+    classify their own decoder."""
+    return not any(ch in glob for ch in "*?[")
 
 
 def _systemd_user_dir() -> Path:
@@ -2606,32 +2676,10 @@ def interactive_schedule_setup() -> int:
         print("", file=sys.stderr)
         return 0
 
-    # Mode choice
-    print("", file=sys.stderr)
-    print(" Two scheduling modes:", file=sys.stderr)
-    print("   1) Live watch — runs in the background, uploads new captures",
-          file=sys.stderr)
-    print("      as soon as they appear. Best for decoders that write a",
-          file=sys.stderr)
-    print("      new file per capture (tar1090 chunks, NDJSON sessions).",
-          file=sys.stderr)
-    print("   2) Periodic — runs every N minutes against the current state.",
-          file=sys.stderr)
-    print("      Best for decoders that rewrite one rolling file in place",
-          file=sys.stderr)
-    print("      (dump1090-fa, readsb, VRS).", file=sys.stderr)
-    print("", file=sys.stderr)
-    while True:
-        ans = input(" Choose [1/2] (default: 1): ").strip()
-        if ans == "" or ans == "1":
-            mode = "watch"
-            break
-        if ans == "2":
-            mode = "periodic"
-            break
-        print(" enter 1 or 2", file=sys.stderr)
-
-    # Input dir
+    # Input dir first — what the folder contains determines which
+    # scheduling mode fits, so it gets asked before the mode question and
+    # the right answer gets preselected below, instead of asking the user
+    # to classify their own decoder.
     candidates = _guess_decoder_dirs()
     print("", file=sys.stderr)
     if candidates:
@@ -2648,6 +2696,48 @@ def interactive_schedule_setup() -> int:
     # Glob
     default_glob = _guess_glob_for_dir(input_dir)
     glob = _prompt_str(" File pattern", default_glob)
+
+    # Mode choice — preselected from the pattern. A fixed filename with no
+    # wildcard (aircraft.json) is a rolling snapshot the decoder rewrites
+    # in place, which is what periodic mode is built for. Wildcards mean
+    # new files appear over time, which is what watch mode is for.
+    rolling = _is_rolling_file_pattern(glob)
+    print("", file=sys.stderr)
+    print(" Two scheduling modes:", file=sys.stderr)
+    print("   1) Live watch — runs in the background, uploads new captures",
+          file=sys.stderr)
+    print("      as soon as they appear. Best for decoders that write a",
+          file=sys.stderr)
+    print("      new file per capture (tar1090 chunks, NDJSON sessions).",
+          file=sys.stderr)
+    print("   2) Periodic — runs every N minutes against the current state.",
+          file=sys.stderr)
+    print("      Best for decoders that rewrite one rolling file in place",
+          file=sys.stderr)
+    print("      (dump1090-fa, readsb, VRS).", file=sys.stderr)
+    print("", file=sys.stderr)
+    if rolling:
+        print(f" {glob!r} is a single rolling file, so periodic is the",
+              file=sys.stderr)
+        print(" right mode here. Press Enter to accept.", file=sys.stderr)
+        print("", file=sys.stderr)
+    default_choice = "2" if rolling else "1"
+    while True:
+        ans = input(f" Choose [1/2] (default: {default_choice}): ").strip()
+        if ans == "":
+            ans = default_choice
+        if ans == "1":
+            mode = "watch"
+            if rolling:
+                print(f" Note: {glob!r} is one file rewritten in place."
+                      " Watch mode re-uploads it on every change, which is"
+                      " chattier than a periodic timer; periodic is usually"
+                      " what you want for this decoder.", file=sys.stderr)
+            break
+        if ans == "2":
+            mode = "periodic"
+            break
+        print(" enter 1 or 2", file=sys.stderr)
 
     # Interval (periodic only)
     interval_min = 5
