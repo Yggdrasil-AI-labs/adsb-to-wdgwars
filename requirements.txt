@@ -2,16 +2,16 @@
 # cooldown, silent-drop detection). Lives at:
 #     https://github.com/Yggdrasil-AI-labs/gungnir
 #
-# Pinned to a specific gungnir commit for reproducibility — every fresh
+# Pinned to a specific gungnir commit for reproducibility - every fresh
 # install of this exact muninn.py pulls the gungnir bytes it was tested
 # against. Bumped deliberately when we upgrade gungnir; not floating on
 # main. (Switch to a normal `gungnir>=X.Y` pin once gungnir publishes to
 # PyPI.)
 #
 # Uses GitHub's archive tarball URL (not `git+https://`) so end users
-# don't need git installed — pip fetches the .tar.gz over plain HTTPS.
+# don't need git installed - pip fetches the .tar.gz over plain HTTPS.
 gungnir @ https://github.com/Yggdrasil-AI-labs/gungnir/archive/refs/tags/v0.1.3.tar.gz
 
-# Optional — only needed if your input is AVR raw Mode-S (*XXXX; format).
+# Optional - only needed if your input is AVR raw Mode-S (*XXXX; format).
 # SBS-1 / dump1090 JSON / generic CSV inputs need no dependencies (stdlib only).
 pyModeS>=2.18

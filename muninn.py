@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""muninn.py — convert ADS-B capture files to the WDGWars aircraft
+"""muninn.py, convert ADS-B capture files to the WDGWars aircraft
 upload JSON, and optionally POST directly to the server.
 
 Linked by the WDGWars portal as the recommended advanced converter
@@ -18,7 +18,7 @@ Auto-detects the input format from the first non-empty line:
                          per file) OR a stream of JSON objects, one per line
 
   Generic CSV (h4m etc.) columns like icao,lat,lon,alt,callsign,timestamp
-                         in some order — configure with --csv-format if needed
+                         in some order, configure with --csv-format if needed
 
 Each unique ICAO is kept once with its **most recent** position. Records
 missing lat/lon are dropped (WDGWars rejects them server-side anyway).
@@ -35,7 +35,7 @@ If --upload is given, the array is wrapped in the documented HMAC-SHA256
 envelope and POSTed to https://wdgwars.pl/endpoint/upload/ (the trailing
 slash is required, without it the server rejects every payload as a
 replay). The /endpoint/* prefix is a server-side alias of /api/* that
-bypasses Cloudflare's per-IP L7 DDoS protection — at batch scale, /api/*
+bypasses Cloudflare's per-IP L7 DDoS protection, at batch scale, /api/*
 intermittently 429s before the request reaches the origin. Override with
 --api-url if you need to force /api/upload/ for any reason.
 
@@ -137,7 +137,7 @@ except ModuleNotFoundError:
         )
     _sys.exit(1)
 
-# Muninn is a CLI tool — configure logging so cron logs look like they
+# Muninn is a CLI tool - configure logging so cron logs look like they
 # did in v1.x (plain-message-per-line to stderr). Library users who set
 # up their own root logger before calling into muninn override this.
 if not logging.getLogger().handlers:
@@ -160,18 +160,18 @@ _client = gungnir.Client(
 # default for --api-url) keep working without change. Source of truth
 # lives in gungnir; touch it there if the server ever moves. As of
 # gungnir v0.1.2 (pinned in requirements.txt), DEFAULT_API_URL points
-# at /endpoint/upload/ — a server-side alias of /api/upload/ that
+# at /endpoint/upload/ - a server-side alias of /api/upload/ that
 # bypasses Cloudflare's per-IP L7 DDoS rate-limit. ME_API_URL stays
 # on /api/me (single-call, not affected by burst limits).
 DEFAULT_API_URL = gungnir.DEFAULT_API_URL
 ME_API_URL = gungnir.ME_API_URL
 
-# Persistent API key location — XDG-style on Linux/Mac, %APPDATA% on Windows.
+# Persistent API key location - XDG-style on Linux/Mac, %APPDATA% on Windows.
 def _config_dir() -> Path:
     """Per-tool config dir. Delegates to gungnir so the path matches
     every other tool in the family. For ``tool="muninn"`` this is
     ``~/.config/muninn/`` on POSIX and ``%APPDATA%/muninn/`` on Windows
-    — byte-identical to Muninn 1.x's path."""
+, byte-identical to Muninn 1.x's path."""
     return gungnir.keys.config_dir("muninn")
 
 
@@ -226,17 +226,17 @@ def _save_folder_prefs(input_dir: Path, output_dir: Path) -> None:
 #      scheduler artifact (systemd ExecStart, crontab line, schtasks action),
 #      runs repeatedly with the user's privileges. A stray quote or shell
 #      metacharacter there is a latent, recurring code-execution + reliability
-#      bug — not a one-shot one the operator can see and undo. (S6350 / S8705)
+#      bug - not a one-shot one the operator can see and undo. (S6350 / S8705)
 #   2. A filename or directory that smuggles a NUL/newline into a value that
 #      is then used to build a *second* path (the watch state file) or a
 #      command line, letting a write escape where the operator pointed us, or
 #      a newline inject a second crontab/systemd directive. (S2083)
 #   3. A SQLite capture filename containing URI metacharacters (``?``/``#``)
-#      that would otherwise override the read-only ``?mode=ro`` we open with —
+#      that would otherwise override the read-only ``?mode=ro`` we open with - 
 #      e.g. a file literally named ``x?mode=rwc.sqb``. (S8706)
 #
 # Where a finding is genuinely acceptable-by-design for a local CLI (``--out``
-# can point anywhere on purpose — see SECURITY.md "Output file handling"), that
+# can point anywhere on purpose - see SECURITY.md "Output file handling"), that
 # is documented at the call site and normalised rather than papered over with a
 # fake sandbox root. The full disposition of every SonarCloud finding lives in
 # SECURITY-FINDINGS.md.
@@ -251,7 +251,7 @@ class _UnsafeInput(ValueError):
     friendly one-line message + exit code 2 by the ``__main__`` wrapper."""
 
 
-# Real decoder globs — aircraft.json, chunk_*.json.gz, *.ndjson.gz, *.json —
+# Real decoder globs - aircraft.json, chunk_*.json.gz, *.ndjson.gz, *.json,
 # are all literal filename characters plus glob metacharacters. Anything
 # outside this set (quotes, spaces, ;, $, backticks, /, \) has no business in
 # a pattern we render into a scheduler command, so reject it outright.
@@ -292,7 +292,7 @@ def _user_path(raw: str, *, label: str = "path", resolve: bool = True) -> Path:
     ``resolve()``. It deliberately does NOT confine the result to a root: an
     operator CLI legitimately writes wherever the operator points it (see
     SECURITY.md). The value of ``resolve()`` is that traversal sequences are
-    canonicalised so later code — and the absolute path we print back — refer
+    canonicalised so later code, and the absolute path we print back, refer
     to one unambiguous location."""
     _reject_control_chars(str(raw), label)
     p = Path(raw).expanduser()
@@ -304,8 +304,8 @@ def _state_path_for(watch_directory: Path) -> Path:
     watched directory (threat 2 above).
 
     The filename is the constant ``.adsb-state.json``; the only way the write
-    could escape is if ``watch_directory`` — or a same-named state file already
-    present in it — resolves through a symlink to somewhere else. We resolve
+    could escape is if ``watch_directory``, or a same-named state file already
+    present in it, resolves through a symlink to somewhere else. We resolve
     both sides and require the state file's parent to be exactly the resolved
     watched directory, so a planted ``.adsb-state.json -> /etc/cron.d/x``
     symlink is rejected instead of followed."""
@@ -314,7 +314,7 @@ def _state_path_for(watch_directory: Path) -> Path:
     if state.parent != base:
         raise _UnsafeInput(
             f"watch state file {state} would escape the watched directory "
-            f"{base} (symlink in the path?) — refusing to write it.")
+            f"{base} (symlink in the path?). Refusing to write it.")
     return state
 
 
@@ -324,7 +324,7 @@ def _sqlite_ro_uri(path: Path) -> str:
 
     A capture literally named ``x?mode=rwc.sqb`` would, under naive
     ``f"file:{path}?mode=ro"`` interpolation, parse as the ``x`` file opened
-    ``mode=rwc`` — silently dropping the read-only guard and even creating
+    ``mode=rwc``, silently dropping the read-only guard and even creating
     files. ``pathname2url`` percent-encodes ``?`` and ``#`` (and spaces) in the
     path so the only query parameter is the one we append."""
     return ("file:" + urllib.request.pathname2url(str(path.resolve()))
@@ -343,7 +343,7 @@ def _create_desktop_shortcut(muninn_folder: Path) -> bool:
     script_dir = Path(__file__).resolve().parent
     ico = script_dir / "assets" / "muninn.ico"
     lnk = desktop / "Muninn.lnk"
-    # Find python launcher — prefer pythonw-free py launcher, fall back to python
+    # Find python launcher, prefer pythonw-free py launcher, fall back to python
     py = sys.executable
     ps_script = f'''
 $WshShell = New-Object -comObject WScript.Shell
@@ -352,7 +352,7 @@ $s.TargetPath = "cmd.exe"
 $s.Arguments = '/k "cd /d ""{script_dir}"" && ""{py}"" muninn.py & pause"'
 $s.WorkingDirectory = "{script_dir}"
 $s.IconLocation = "{ico}"
-$s.Description = "Muninn — ADS-B to WDGWars converter"
+$s.Description = "Muninn. ADS-B to WDGWars converter"
 $s.Save()
 '''
     import subprocess
@@ -393,7 +393,7 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
     Desktop, also offers to create a desktop shortcut with the raven icon."""
     print("", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
-    print(" Muninn — first-time folder setup", file=sys.stderr)
+    print(" Muninn, first-time folder setup", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
     print("", file=sys.stderr)
     print(" Where would you like your input/output folders?", file=sys.stderr)
@@ -447,7 +447,7 @@ def _prompt_folder_choice(script_dir: Path) -> tuple[Path, Path]:
                 print(f" ✓ Created Muninn.lnk on your Desktop. Double-click "
                       f"to convert anything in input/.", file=sys.stderr)
             else:
-                print(" (couldn't create shortcut — no big deal, "
+                print(" (couldn't create shortcut, no big deal, "
                       "command-line still works)", file=sys.stderr)
             print("", file=sys.stderr)
 
@@ -468,7 +468,7 @@ def _prompt_yes_no(question: str, default: bool = True) -> bool:
 
     On EOF / Ctrl+C, returns the default so non-interactive runs don't
     hang. Always emits a newline after the answer when stdin is piped
-    so the next section header doesn't collide with the prompt line —
+    so the next section header doesn't collide with the prompt line,
     interactive TTY input gets its newline from the terminal, piped
     input doesn't.
     """
@@ -502,7 +502,7 @@ def interactive_setup() -> int:
     Returns 0 on success or if the user declined, 1 on cancel."""
     print("", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
-    print(" muninn — API key setup", file=sys.stderr)
+    print(" muninn. API key setup", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
     print("", file=sys.stderr)
     print(" An API key is ONLY needed if you want to upload to WDGWars.", file=sys.stderr)
@@ -531,11 +531,11 @@ def interactive_setup() -> int:
                       file=sys.stderr)
                 key = sys.stdin.readline().strip()
         except (KeyboardInterrupt, EOFError):
-            print("\n[muninn] setup cancelled — no key saved", file=sys.stderr)
+            print("\n[muninn] setup cancelled, no key saved", file=sys.stderr)
             return 1
 
         if not key:
-            print(" (empty input — try again, or Ctrl+C to cancel)\n",
+            print(" (empty input, try again, or Ctrl+C to cancel)\n",
                   file=sys.stderr)
             continue
 
@@ -568,7 +568,7 @@ def interactive_setup() -> int:
 def save_key(key: str) -> None:
     """Save the API key to user config. Refuses to write through a symlink
     and creates the file with mode 0o600 atomically (anti-symlink-attack
-    and anti-create-mode-race — both defenses live in gungnir as of
+    and anti-create-mode-race, both defenses live in gungnir as of
     0.1.1)."""
     try:
         _client.save_key(key)
@@ -576,7 +576,7 @@ def save_key(key: str) -> None:
         sys.exit(f"{e}\nremove the symlink and re-run --save-key")
     p = _key_path()
     print(f"[muninn] saved API key to {p}", file=sys.stderr)
-    print(f"[muninn] (file mode 600 — only your user can read it)", file=sys.stderr)
+    print(f"[muninn] (file mode 600. Only your user can read it)", file=sys.stderr)
     print(f"[muninn] you can now run uploads without --key or env var",
           file=sys.stderr)
 
@@ -594,7 +594,7 @@ def _scrub(text: str, key: str) -> str:
 def check_whoami(key: str) -> int:
     """Hit /api/me to validate the key. Logs username + counts on success.
     Never echoes the API key in any output, even on failure. Delegates
-    to gungnir.transport.whoami() — the prefixed log lines come from
+    to gungnir.transport.whoami(). The prefixed log lines come from
     there."""
     return _client.whoami(key)
 
@@ -603,7 +603,7 @@ def check_whoami(key: str) -> int:
 def detect_format(path: Path) -> str:
     """Sniff the first non-empty, non-comment line and decide the format.
 
-    Transparently handles gzip — .gz / .json.gz files (tar1090 history
+    Transparently handles gzip, .gz / .json.gz files (tar1090 history
     chunks) are decompressed on the fly for sniffing. The full parser does
     the same on read."""
     # Binary GDL-90 stream: starts with 0x7E (flag byte) followed by a
@@ -633,7 +633,7 @@ def detect_format(path: Path) -> str:
     except OSError:
         pass
     # Extension hint when the magic-byte read failed (network mounts,
-    # permission quirks). Only triggers on .sqb specifically — generic
+    # permission quirks). Only triggers on .sqb specifically, generic
     # SQLite files without that extension still need the magic-byte path.
     if path.suffix.lower() == ".sqb":
         return "sqb"
@@ -671,14 +671,14 @@ def detect_format(path: Path) -> str:
                 return "sbs1"
             if s.startswith("{") or s.startswith("["):
                 return "json"
-            # PortaPack Mayhem ADSB.TXT format — raw hex prefix + labeled fields:
+            # PortaPack Mayhem ADSB.TXT format, raw hex prefix + labeled fields:
             # "8DA4... ICAO:A41144 [Squawk:NNNN] [CALLSIGN] [Alt:N] [Lat:F Lon:F] ..."
             if " ICAO:" in s and s[:14].replace(" ", "").isalnum():
                 return "mayhem"
             # Tab-separated AVR variants (some receivers prefix with timestamp)
             if "*" in s and s.endswith(";"):
                 return "avr-tagged"
-            # Otherwise treat as a generic CSV — caller can hint via --csv-format
+            # Otherwise treat as a generic CSV. Caller can hint via --csv-format
             return "csv"
     return "empty"
 
@@ -740,7 +740,7 @@ def _norm_record(icao: str, *, callsign: str = "", lat: float | None = None,
     if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
         return None
     # ICAO is a 24-bit Mode-S address: always exactly 6 hex chars. Do NOT
-    # strip leading zeros — the server validates ^[0-9A-F]{6}$ and a stripped
+    # strip leading zeros, the server validates ^[0-9A-F]{6}$ and a stripped
     # ICAO ("0DB36A" -> "DB36A") is silently dropped on import. Empty input
     # falls back to "000000" so the caller can still emit a record.
     icao = (icao or "").upper().strip() or "000000"
@@ -799,7 +799,7 @@ def _warn_range(records: list[dict]) -> None:
     print(
         f"[muninn] WARNING: {len(outliers)} of {len(records)} aircraft "
         f"({pct:.0f}%) are >{_ADSB_MAX_REALISTIC_KM} km from the position "
-        f"centroid — possible network-fed remote data mixed with local reception.",
+        f"centroid, possible network-fed remote data mixed with local reception.",
         file=_sys.stderr,
     )
     print(f"[muninn]   Centroid: {clat:.4f}, {clon:.4f}", file=_sys.stderr)
@@ -808,7 +808,7 @@ def _warn_range(records: list[dict]) -> None:
         label = r["callsign"] or "(no callsign)"
         print(
             f"[muninn]   outlier: {r['icao']} {label} "
-            f"@ {r['lat']:.4f},{r['lon']:.4f} — {d:.0f} km from centroid",
+            f"@ {r['lat']:.4f},{r['lon']:.4f}, {d:.0f} km from centroid",
             file=_sys.stderr,
         )
     if len(outliers) > 3:
@@ -904,14 +904,14 @@ def parse_sbs1(path: Path) -> dict[str, dict]:
 #
 # Quirks worth knowing about:
 #   * One row per FLIGHT, not per position report. We emit up to two
-#     records per flight — one at StartTime/First* and one at EndTime/Last*
-#     — whichever sides have valid coordinates.
+#     records per flight - one at StartTime/First* and one at EndTime/Last*
+#  - whichever sides have valid coordinates.
 #   * Timestamps are local-time strings like "2024-08-15 14:32:11.123"
 #     with no timezone information. Default behaviour is to treat them as
 #     UTC, since muninn's output is UTC throughout. Pass --sqb-tz <IANA
 #     zone> (e.g. "America/New_York") to interpret them as local time in
 #     that zone and convert to UTC on the fly.
-#   * Schema drift — RTL1090 / Kinetic BaseStation / PlanePlotter all
+#   * Schema drift - RTL1090 / Kinetic BaseStation / PlanePlotter all
 #     ship slightly different column sets. We use PRAGMA table_info to
 #     discover which columns are present and substitute NULL for any
 #     missing optional column, rather than failing the SELECT.
@@ -921,12 +921,12 @@ def parse_sbs1(path: Path) -> dict[str, dict]:
 def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
     import sqlite3
 
-    # Read-only URI form is the right call on CPython — keeps the read
+    # Read-only URI form is the right call on CPython. Keeps the read
     # safe even if the .sqb is shared with a live BaseStation process.
     # The journal file isn't touched.
     #
     # In Pyodide (the browser build), the URI form silently hangs against
-    # the WASM sqlite3's virtual filesystem — connect() never returns and
+    # the WASM sqlite3's virtual filesystem. Connect() never returns and
     # never raises, freezing the web UI on "Parsing BaseStation.sqb..."
     # forever. Detect the emscripten platform and fall back to a plain
     # path connect there. The web build drops files into a private MEMFS
@@ -948,10 +948,10 @@ def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
             "SELECT name FROM sqlite_master WHERE type='table'"
         )}
         if "Aircraft" not in tables:
-            sys.exit(f"[muninn] {path.name}: no Aircraft table — file is "
+            sys.exit(f"[muninn] {path.name}: no Aircraft table. File is "
                      f"not a BaseStation-schema SQLite database.")
         if "Flights" not in tables:
-            sys.exit(f"[muninn] {path.name}: no Flights table — this looks "
+            sys.exit(f"[muninn] {path.name}: no Flights table, this looks "
                      f"like an Aircraft-only BaseStation install (logger "
                      f"never enabled), so there is nothing to upload.")
 
@@ -960,11 +960,11 @@ def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
 
         if "AircraftID" not in flight_cols:
             sys.exit(f"[muninn] {path.name}: Flights table missing "
-                     f"AircraftID column — cannot join to Aircraft.ModeS "
+                     f"AircraftID column. Cannot join to Aircraft.ModeS "
                      f"for ICAO.")
         if "ModeS" not in ac_cols:
             sys.exit(f"[muninn] {path.name}: Aircraft table missing ModeS "
-                     f"column — cannot extract ICAO addresses.")
+                     f"column. Cannot extract ICAO addresses.")
 
         # Build the projection dynamically so optional missing columns
         # become NULL rather than raising. Order MUST match the unpack
@@ -1000,7 +1000,7 @@ def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
         conn.close()
 
     if not flights:
-        sys.exit(f"[muninn] {path.name}: Flights table is empty — nothing "
+        sys.exit(f"[muninn] {path.name}: Flights table is empty, nothing "
                  f"to upload. (If you just enabled logging, give the "
                  f"receiver time to record some flights first.)")
 
@@ -1060,7 +1060,7 @@ def parse_sqb(path: Path, tz_override: str | None = None) -> dict[str, dict]:
                 first_seen=_ts_to_utc_iso(st) or _now_iso(),
             )
             if rec:
-                # Composite key — unlike SBS-1 streaming we deliberately
+                # Composite key, unlike SBS-1 streaming we deliberately
                 # keep both endpoints per flight, and may carry multiple
                 # flights for the same ICAO. Downstream only consumes
                 # rows.values().
@@ -1088,10 +1088,10 @@ def parse_avr(path: Path) -> dict[str, dict]:
     try:
         import pyModeS as pms
     except ImportError:
-        sys.exit("AVR raw input requires pyModeS — install with: pip install pyModeS")
+        sys.exit("AVR raw input requires pyModeS, install with: pip install pyModeS")
 
     # pyModeS 3.x ships a PipeDecoder that maintains per-ICAO state across
-    # frames — handles paired CPR position decoding, callsign merging, and
+    # frames, handles paired CPR position decoding, callsign merging, and
     # altitude/velocity tracking automatically. Way cleaner than rolling our
     # own even/odd CPR pairing.
     pd = pms.PipeDecoder()
@@ -1157,8 +1157,8 @@ def parse_json(path: Path) -> dict[str, dict]:
          {"now":..., "aircraft":[{"hex": ...}, ...]}
       2) VRS (VirtualRadarServer) AircraftList.json:
          {"acList":[{"Icao": ..., "Lat": ..., "Long": ...}, ...]}
-      3) tar1090 history chunks (gzipped dump1090 snapshots — chunk_*.json.gz)
-      4) NDJSON / JSON-lines — one aircraft object per line; field names from
+      3) tar1090 history chunks (gzipped dump1090 snapshots, chunk_*.json.gz)
+      4) NDJSON / JSON-lines, one aircraft object per line; field names from
          either dialect work transparently
       5) Bare JSON arrays of aircraft objects
     """
@@ -1195,7 +1195,7 @@ def parse_json(path: Path) -> dict[str, dict]:
                 pass
         if not icao:
             return
-        # Stratux signals position-validity explicitly — skip aircraft with
+        # Stratux signals position-validity explicitly, skip aircraft with
         # known-invalid positions even if Lat/Lng happen to be present.
         if ac.get("Position_valid") is False:
             return
@@ -1240,7 +1240,7 @@ def parse_json(path: Path) -> dict[str, dict]:
                 for ac in obj["acList"]:
                     _ingest(ac)
                 return rows
-            # Stratux `/traffic` shape — top-level dict whose values are the
+            # Stratux `/traffic` shape. Top-level dict whose values are the
             # aircraft entries (keyed by ICAO hex string). Tell apart from
             # other dict shapes by sniffing the first value for the Stratux
             # signature fields.
@@ -1280,7 +1280,7 @@ def parse_json(path: Path) -> dict[str, dict]:
 # Each line is one decoded frame; data accumulates per ICAO across lines.
 # Some H4M firmware variants label ground speed "Spd:" instead of "GS:" and
 # prepend a YYYYMMDDHHMMSS timestamp column; both are handled here (confirmed
-# against a real H4M ADSB.TXT capture 2026-07-19 — all 113 aircraft had been
+# against a real H4M ADSB.TXT capture 2026-07-19 - all 113 aircraft had been
 # decoding as gs:0 because "Spd:" was not matched). All field extraction is
 # label-anchored, so the leading timestamp column parses without extra work.
 import re as _re
@@ -1368,10 +1368,10 @@ def parse_mayhem(path: Path) -> dict[str, dict]:
 # (NathanVaughn/gdl90py, tests/messages/test_traffic_report.py):
 # ICAO, callsign, lat/lon (to 24-bit fixed-point precision), horizontal
 # velocity, and track all decode to the expected values. CRC is still
-# accepted-without-verification — if real-world captures show frame-aligned
+# accepted-without-verification - if real-world captures show frame-aligned
 # noise we'll wire up CRC-16-CCITT FCS validation.
 GDL90_MSG_TRAFFIC = 0x14   # Traffic Report (other aircraft)
-GDL90_MSG_OWNSHIP = 0x0A   # Ownship Report (your aircraft) — same payload shape
+GDL90_MSG_OWNSHIP = 0x0A   # Ownship Report (your aircraft), same payload shape
 
 def _gdl90_traffic_record(payload: bytes) -> dict | None:
     """Decode one Traffic / Ownship Report payload (27 bytes after msg ID)."""
@@ -1462,13 +1462,13 @@ def parse_gdl90(path: Path) -> dict[str, dict]:
 #
 # Decoding strategy: re-emit each Mode-S short/long message as a hex string
 # and feed it into pyModeS via the same PipeDecoder path parse_avr already
-# uses. That gives us position decoding for free — Beast is just a binary
+# uses. That gives us position decoding for free - Beast is just a binary
 # container around the same DF17 frames.
 def parse_beast(path: Path) -> dict[str, dict]:
     try:
         import pyModeS as pms
     except ImportError:
-        sys.exit("Beast binary input requires pyModeS — install with: pip install pyModeS")
+        sys.exit("Beast binary input requires pyModeS, install with: pip install pyModeS")
 
     raw = path.read_bytes()
     if not raw:
@@ -1500,7 +1500,7 @@ def parse_beast(path: Path) -> dict[str, dict]:
         elif typ == 0x33:
             data_len = 14
         else:
-            # Mode-AC (0x31) and unknown types — skip, ADS-B position
+            # Mode-AC (0x31) and unknown types, skip, ADS-B position
             # decoding only fires on Mode-S short/long.
             i += 1
             continue
@@ -1514,10 +1514,10 @@ def parse_beast(path: Path) -> dict[str, dict]:
     if not hex_msgs:
         return {}
 
-    # Feed into pyModeS PipeDecoder — same path parse_avr uses, which
+    # Feed into pyModeS PipeDecoder. Same path parse_avr uses, which
     # already handles paired CPR position decoding + callsign / altitude /
     # velocity merging per ICAO. Beast is just AVR in a binary container.
-    # NOTE: pyModeS PipeDecoder emits "latitude"/"longitude"/"track" — NOT
+    # NOTE: pyModeS PipeDecoder emits "latitude"/"longitude"/"track". NOT
     # "lat"/"lon"/"heading". Using the wrong keys silently drops every
     # position record.
     pd = pms.PipeDecoder()
@@ -1584,7 +1584,7 @@ def parse_csv(path: Path, fmt: str | None = None) -> dict[str, dict]:
         if looks_like_header and not fields:
             fields = [c.lower().strip() for c in first]
         elif fields:
-            # First row is data — process it
+            # First row is data, process it
             if not looks_like_header:
                 _ingest_csv_row(first, fields, rows)
         else:
@@ -1683,7 +1683,7 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     - Inter-chunk cooldown of 1s between chunks (vs v1.x which was
       back-to-back).
 
-    Wire shape (HMAC envelope) is byte-identical to v1.11.1 — verified
+    Wire shape (HMAC envelope) is byte-identical to v1.11.1, verified
     by ``gungnir/tests/test_muninn_parity.py``.
     """
     return gungnir.transport.send(
@@ -1770,7 +1770,7 @@ def watch_dir(watch_dir: Path, args) -> int:
     """Poll the directory for new/changed files matching --watch-glob.
     For each new file: convert → write JSON → optionally upload.
     State (signatures of processed files) is kept in .adsb-state.json in the
-    watched dir so restarts don't re-process everything — or under the
+    watched dir so restarts don't re-process everything, or under the
     config dir when the watched dir isn't writable."""
     if not watch_dir.is_dir():
         sys.exit(f"--watch requires a directory, got: {watch_dir}")
@@ -1837,13 +1837,13 @@ def watch_dir(watch_dir: Path, args) -> int:
                                    batch_size=args.batch_size,
                                    dry_run=args.dry_run)
                         if rc != 0:
-                            print(f"[watch]   upload failed — will retry next cycle",
+                            print(f"[watch]   upload failed. Will retry next cycle",
                                   file=sys.stderr)
                             continue  # don't mark as seen if upload failed
                     seen[str(f.name)] = sig
                     # Persist after every successful file so we don't lose
                     # progress on crash / Ctrl+C. A state-write failure must
-                    # not take down the loop — dedup just degrades to
+                    # not take down the loop, dedup just degrades to
                     # in-memory for this run.
                     try:
                         state_path.write_text(json.dumps(seen, indent=2))
@@ -1871,14 +1871,14 @@ def watch_dir(watch_dir: Path, args) -> int:
 # Direct alternative to `--watch`ing a directory that some other process
 # (dump1090 --net, ncat, a shell redirect) is writing SBS-1 lines into.
 # Connects straight to the receiver's SBS-1/BaseStation port (30003 by
-# default — dump1090's --net-sbs-port, readsb's equivalent) and ingests the
+# default - dump1090's --net-sbs-port, readsb's equivalent) and ingests the
 # feed line-by-line as it arrives, instead of waiting on a poll interval
 # against a file on disk. Lower latency, one less moving part (no ncat/tee
 # needed), auto-reconnects with backoff if the receiver drops the link.
 #
 # Only SBS-1/BaseStation text is supported (line-oriented, trivial to
 # stream). Beast binary (port 30005) is a framed binary protocol and isn't
-# wired up here — file-based --watch + parse_beast remains the path for that.
+# wired up here - file-based --watch + parse_beast remains the path for that.
 _STREAM_MAX_LINE_BYTES = 65536  # SBS-1 lines are ~100 bytes; this is generous
 
 
@@ -1892,13 +1892,13 @@ def _read_socket_lines(sock: socket.socket, idle_timeout: float):
     Each newline-delimited segment is length-checked *before* it's
     yielded: a well-behaved SBS-1 feed never gets remotely close to
     _STREAM_MAX_LINE_BYTES, so a segment that long is dropped rather than
-    handed to the caller — otherwise a peer that never sends a newline
+    handed to the caller, otherwise a peer that never sends a newline
     (garbage, or a malicious host, since --stream takes an arbitrary
     user-supplied address) would grow the buffer without bound for the
     life of the connection.
 
     Any unterminated bytes still sitting in the buffer are also dropped
-    the moment an idle gap occurs, even if they're under that size cap —
+    the moment an idle gap occurs, even if they're under that size cap,
     a real SBS-1 line completes promptly, so anything left over after a
     full idle_timeout is a torn/stale fragment, not a line-in-progress.
     Without this, a small leftover remainder could sit unresolved across
@@ -1913,7 +1913,7 @@ def _read_socket_lines(sock: socket.socket, idle_timeout: float):
             if buf:
                 # A real SBS-1 line completes promptly; anything still
                 # sitting unterminated after a full idle gap is a torn or
-                # stale fragment, not a line-in-progress. Drop it — a
+                # stale fragment, not a line-in-progress. Drop it, a
                 # complete line arriving after the gap must never have
                 # this glued onto its front.
                 print(f"[stream] WARNING: discarding {len(buf)} buffered "
@@ -1931,7 +1931,7 @@ def _read_socket_lines(sock: socket.socket, idle_timeout: float):
                 break
             if idx > _STREAM_MAX_LINE_BYTES:
                 print(f"[stream] WARNING: dropping a {idx}-byte line "
-                      f"(over the {_STREAM_MAX_LINE_BYTES}-byte limit) — "
+                      f"(over the {_STREAM_MAX_LINE_BYTES}-byte limit), "
                       f"not a well-formed SBS-1 feed?", file=sys.stderr)
             else:
                 line = buf[:idx]
@@ -1940,7 +1940,7 @@ def _read_socket_lines(sock: socket.socket, idle_timeout: float):
                 yield line.decode("utf-8", errors="replace")
             buf = buf[idx + 1:]
         if len(buf) > _STREAM_MAX_LINE_BYTES:
-            print(f"[stream] WARNING: {len(buf)} bytes with no newline yet — "
+            print(f"[stream] WARNING: {len(buf)} bytes with no newline yet, "
                   f"dropping, not a well-formed SBS-1 feed?", file=sys.stderr)
             buf = b""
 
@@ -1978,7 +1978,7 @@ def _flush_stream_records(rows: dict[str, dict], dirty: set[str],
         rc = upload(records, api_key, args.api_url,
                    batch_size=args.batch_size, dry_run=args.dry_run)
         if rc != 0:
-            print(f"[stream]   upload failed for this batch — those aircraft "
+            print(f"[stream]   upload failed for this batch, those aircraft "
                   f"stay dirty and retry next flush", file=sys.stderr)
             return
     dirty.clear()
@@ -2026,7 +2026,7 @@ def stream_tcp(host: str, port: int, args) -> int:
 
     rows: dict[str, dict] = {}
     dirty: set[str] = set()
-    RECONNECT_DELAY = 2.0  # flat retry — this is a local receiver, not a flaky WAN
+    RECONNECT_DELAY = 2.0  # flat retry. This is a local receiver, not a flaky WAN
 
     try:
         while True:
@@ -2050,7 +2050,7 @@ def stream_tcp(host: str, port: int, args) -> int:
                             _flush_stream_records(rows, dirty, api_key, args)
                             last_flush = now
             except OSError as e:
-                print(f"[stream] connection error ({e}) — retrying in "
+                print(f"[stream] connection error ({e}), retrying in "
                       f"{RECONNECT_DELAY:.0f}s", file=sys.stderr)
                 time.sleep(RECONNECT_DELAY)
     except KeyboardInterrupt:
@@ -2061,21 +2061,21 @@ def stream_tcp(host: str, port: int, args) -> int:
 # ── Scheduling (--schedule / --unschedule) ─────────────────────────────────
 #
 # Two modes:
-#   watch    — long-running daemon that watches a directory and uploads new
+#   watch - long-running daemon that watches a directory and uploads new
 #              files as they appear. Best for decoders that write one file
 #              per capture session (tar1090 chunks, NDJSON sessions).
-#   periodic — runs every N minutes against the current state of a folder.
+#   periodic - runs every N minutes against the current state of a folder.
 #              Best for decoders that rewrite a single rolling file in place
 #              (dump1090-fa, readsb, VRS).
 #
 # Mechanism per platform:
-#   Linux with systemd  — user systemd units in ~/.config/systemd/user/
+#   Linux with systemd - user systemd units in ~/.config/systemd/user/
 #                         (no sudo). Default on Pi OS / Debian / Ubuntu.
-#   Linux without systemd, macOS — user crontab. Periodic-mode only;
+#   Linux without systemd, macOS - user crontab. Periodic-mode only;
 #                                  watch-mode users get a copy-paste hint.
-#   Windows             — schtasks /Create at user scope.
+#   Windows - schtasks /Create at user scope.
 #
-# Everything is idempotent — re-running setup detects an existing install
+# Everything is idempotent - re-running setup detects an existing install
 # and replaces it. The marker comment `managed-by-muninn` flags entries
 # Muninn owns so uninstall is exact.
 
@@ -2119,7 +2119,7 @@ def _guess_decoder_dirs() -> list[Path]:
             # but the symlink filter below means we never suggest one that
             # redirects elsewhere, and it is only ever an interactive
             # suggestion the operator must confirm. (S5443)
-            Path("/tmp/dump1090"),  # NOSONAR S5443 — guarded; see comment above
+            Path("/tmp/dump1090"),  # NOSONAR S5443, guarded; see comment above
             Path("/usr/local/var/dump1090"),
         ]
     elif sys.platform == "win32":
@@ -2153,7 +2153,7 @@ def _guess_glob_for_dir(d: Path) -> str:
 
 def _is_rolling_file_pattern(glob: str) -> bool:
     """True when the file pattern names one fixed file rather than a family
-    of files — i.e. a decoder that rewrites a rolling snapshot in place
+    of files, i.e. a decoder that rewrites a rolling snapshot in place
     (readsb/dump1090-fa aircraft.json). No wildcard means no new file will
     ever "appear", so periodic mode is the right schedule for it and the
     interactive prompt preselects accordingly instead of asking the user to
@@ -2190,7 +2190,7 @@ def _schedule_mechanism() -> str:
 # systemd --user units (what install_systemd_user just enabled) only keep
 # running while the owning user has an active login session. Without
 # "lingering" enabled for that user, a reboot or even a plain logout stops
-# muninn-upload.timer/.service with no error anywhere — the decoder is a
+# muninn-upload.timer/.service with no error anywhere - the decoder is a
 # separate system service and keeps running, so its web map keeps showing
 # planes, making the loss of uploads invisible until someone checks the
 # server side. This was found live on 2026-07-25 the hard way.
@@ -2201,7 +2201,7 @@ def _schedule_mechanism() -> str:
 # reports success re-queries `--property=Linger` first. Every failure path
 # (loginctl missing, query ambiguous, enable-linger non-zero, enable-linger
 # "succeeded" but didn't verify) prints a loud, explicit warning with the
-# exact `sudo` command to run — reproducing the silent-failure bug this
+# exact `sudo` command to run - reproducing the silent-failure bug this
 # exists to fix would defeat the point of writing it.
 
 def _linger_state(user: str) -> str | None:
@@ -2231,7 +2231,7 @@ def _warn_linger_not_verified(user: str, reason: str) -> None:
     print(f" {reason}", file=sys.stderr)
     print(" Without it, the schedule you just installed will stop running",
           file=sys.stderr)
-    print(" the next time you log out or reboot — silently. The decoder is",
+    print(" the next time you log out or reboot. Silently. The decoder is",
           file=sys.stderr)
     print(" a separate service and keeps running, so its map will keep",
           file=sys.stderr)
@@ -2246,7 +2246,7 @@ def ensure_linger_enabled() -> bool:
     """Best-effort: make sure this user's systemd units survive reboot.
 
     Called right after install_systemd_user enables the unit. Never
-    prompts for or invokes sudo — attempts the unprivileged call (polkit
+    prompts for or invokes sudo, attempts the unprivileged call (polkit
     allows this on some systems) and, on failure, prints the exact `sudo`
     command instead. Returns True only when lingering was verified enabled
     (already-on or freshly re-queried after enabling); False in every other
@@ -2261,7 +2261,7 @@ def ensure_linger_enabled() -> bool:
 
     state = _linger_state(user)
     if state == "yes":
-        print(f"[schedule] linger already enabled for {user} — this "
+        print(f"[schedule] linger already enabled for {user}, this "
               f"schedule will survive logout/reboot.", file=sys.stderr)
         return True
     if state is None:
@@ -2280,12 +2280,12 @@ def ensure_linger_enabled() -> bool:
             user, "loginctl disappeared while attempting to enable linger;")
         return False
 
-    # Never trust the exit code alone — re-query the property, since this
+    # Never trust the exit code alone, re-query the property, since this
     # is exactly the kind of step that must not report success it hasn't
     # verified.
     verified = _linger_state(user)
     if verified == "yes":
-        print(f"[schedule] enabled linger for {user} — this schedule will "
+        print(f"[schedule] enabled linger for {user}. This schedule will "
               f"survive logout/reboot.", file=sys.stderr)
         return True
 
@@ -2306,7 +2306,7 @@ def _systemd_quote(value) -> str:
     treats ``%`` as a unit specifier. Double-quoting keeps a path with spaces
     intact; we reject the characters that would let a value break out of the
     quotes or be reinterpreted (``"``, ``%``, NUL, newline). Backslash is
-    rejected too — systemd applies C-style escapes inside quotes and these
+    rejected too, systemd applies C-style escapes inside quotes and these
     units are POSIX-only, where paths never need one."""
     # systemd units are POSIX-only; render with forward slashes so the output
     # is identical regardless of the host the renderer is exercised on.
@@ -2382,7 +2382,7 @@ def render_systemd_units(mode: str, input_dir: Path, glob: str,
         # Those dirs are tmpfs the feeder user can't write to, so saving the
         # audit-trail JSON back next to the input fails (and any file that
         # does land there is wiped on reboot). --no-save uploads from memory
-        # and skips the local write — reads still work fine.
+        # and skips the local write. Reads still work fine.
         service = (
             "[Unit]\n"
             f"Description=Muninn ADS-B upload (one-shot){desc_suffix}\n"
@@ -2474,7 +2474,7 @@ def install_systemd_user(mode: str, input_dir: Path, glob: str,
     # Mode switch hygiene: tear down the unit-type we're NOT using this
     # round, so switching periodic -> watch doesn't leave an orphan timer
     # firing into the long-lived watch service (which would interrupt it
-    # every N minutes). Symmetric on watch -> periodic — but in that case
+    # every N minutes). Symmetric on watch -> periodic, but in that case
     # the .timer didn't exist before, so the stop/disable on .service
     # below is the only one that matters.
     if mode == "watch":
@@ -2520,7 +2520,7 @@ def install_systemd_user(mode: str, input_dir: Path, glob: str,
     print(f"[schedule] logs:   journalctl --user -u {target} -f",
           file=sys.stderr)
     # The unit is enabled and running right now, but systemd --user units
-    # don't survive logout/reboot without lingering — check/enable it so
+    # don't survive logout/reboot without lingering, check/enable it so
     # this schedule doesn't silently die the next time the host restarts.
     ensure_linger_enabled()
     return 0
@@ -2585,7 +2585,7 @@ def uninstall_cron() -> int:
     try:
         r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         if r.returncode != 0:
-            return 0  # no crontab at all — nothing to remove
+            return 0  # no crontab at all, nothing to remove
         current = r.stdout
     except FileNotFoundError:
         return 0
@@ -2661,7 +2661,7 @@ def interactive_schedule_setup() -> int:
     directly via --schedule."""
     print("", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
-    print(" muninn — schedule setup", file=sys.stderr)
+    print(" muninn, schedule setup", file=sys.stderr)
     print("─" * 60, file=sys.stderr)
     print("", file=sys.stderr)
     print(" Muninn can run on a schedule and upload new captures",
@@ -2676,7 +2676,7 @@ def interactive_schedule_setup() -> int:
         print("", file=sys.stderr)
         return 0
 
-    # Input dir first — what the folder contains determines which
+    # Input dir first, what the folder contains determines which
     # scheduling mode fits, so it gets asked before the mode question and
     # the right answer gets preselected below, instead of asking the user
     # to classify their own decoder.
@@ -2689,7 +2689,7 @@ def interactive_schedule_setup() -> int:
     default_dir = str(candidates[0]) if candidates else ""
     ans = _prompt_str(" Decoder output folder", default_dir)
     if not ans:
-        print(" no folder given — cancelling", file=sys.stderr)
+        print(" no folder given, cancelling", file=sys.stderr)
         return 1
     input_dir = Path(ans).expanduser()
 
@@ -2697,20 +2697,20 @@ def interactive_schedule_setup() -> int:
     default_glob = _guess_glob_for_dir(input_dir)
     glob = _prompt_str(" File pattern", default_glob)
 
-    # Mode choice — preselected from the pattern. A fixed filename with no
+    # Mode choice, preselected from the pattern. A fixed filename with no
     # wildcard (aircraft.json) is a rolling snapshot the decoder rewrites
     # in place, which is what periodic mode is built for. Wildcards mean
     # new files appear over time, which is what watch mode is for.
     rolling = _is_rolling_file_pattern(glob)
     print("", file=sys.stderr)
     print(" Two scheduling modes:", file=sys.stderr)
-    print("   1) Live watch — runs in the background, uploads new captures",
+    print("   1) Live watch. Runs in the background, uploads new captures",
           file=sys.stderr)
     print("      as soon as they appear. Best for decoders that write a",
           file=sys.stderr)
     print("      new file per capture (tar1090 chunks, NDJSON sessions).",
           file=sys.stderr)
-    print("   2) Periodic — runs every N minutes against the current state.",
+    print("   2) Periodic. Runs every N minutes against the current state.",
           file=sys.stderr)
     print("      Best for decoders that rewrite one rolling file in place",
           file=sys.stderr)
@@ -2745,11 +2745,11 @@ def interactive_schedule_setup() -> int:
         interval_min = _prompt_int(" How often (minutes)", 5,
                                    min_val=1, max_val=60)
 
-    # Dry-run prompt — default Yes for safety. Dry-run installs the unit
+    # Dry-run prompt, default Yes for safety. Dry-run installs the unit
     # with --dry-run baked into ExecStart so the user can verify the
     # decode/log pipeline before flipping to live uploads.
     print("", file=sys.stderr)
-    print(" Install in dry-run first? (no uploads — decodes + logs only;",
+    print(" Install in dry-run first? (no uploads, decodes + logs only;",
           file=sys.stderr)
     print(" re-run --schedule later to flip to live)", file=sys.stderr)
     dry_run = _prompt_yes_no(" Dry-run mode?", default=True)
@@ -2882,7 +2882,7 @@ def cmd_unschedule() -> int:
     """Remove every Muninn-managed schedule entry on this platform."""
     mech = _schedule_mechanism()
     rcs = []
-    # Always try all three on Linux — user may have moved between cron
+    # Always try all three on Linux. User may have moved between cron
     # and systemd between installs.
     if sys.platform == "win32":
         rcs.append(uninstall_windows_task())
@@ -2901,7 +2901,7 @@ def _default_out_dir_from_prefs() -> Path | None:
     Second-to-last tier of output-path resolution in ``_process_one_file``:
     ``--out`` > ``--out-dir`` > this > beside the input file. Before v2.1.2
     an explicit input path skipped straight to "beside the input", ignoring
-    a configured output folder entirely — see CHANGELOG v2.1.2.
+    a configured output folder entirely, see CHANGELOG v2.1.2.
     """
     prefs = _load_folder_prefs()
     if prefs and prefs.get("output"):
@@ -2920,14 +2920,14 @@ def _write_local_output(out_path: Path, payload: dict, *,
     points people and where the README's own one-shot example runs against.
     Two rules follow from that:
 
-    1. Never let this surface a raw traceback — the person hitting a
+    1. Never let this surface a raw traceback, the person hitting a
        ``PermissionError`` here is following documented steps, not
        debugging Python.
     2. Never let this abort an ``--upload``. The local JSON is a side
        artifact of the audit trail; the upload is the actual point of the
        run. A user who can't write locally but CAN reach the network should
        still get their data uploaded, with a loud warning about the local
-       copy — not a failed run.
+       copy. Not a failed run.
     """
     hint = ("Point --out-dir at a folder you can write to, or clear the "
             "saved folder choice with --reset and pick a writable one next "
@@ -2954,10 +2954,10 @@ def _write_local_output(out_path: Path, payload: dict, *,
 
 def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
     """Decode a single capture file and write its JSON output.
-    Returns (exit_code, records). Does NOT upload — caller decides.
+    Returns (exit_code, records). Does NOT upload, caller decides.
 
     A failed local write only turns into exit_code 1 (no records) when
-    ``args.upload`` is False — the local file was the whole point of that
+    ``args.upload`` is False. The local file was the whole point of that
     run. When ``args.upload`` is True, records are always returned on rc 0
     even if the local write failed, so the caller still uploads (see
     _write_local_output)."""
@@ -3023,7 +3023,7 @@ def _process_one_file(path: Path, args) -> tuple[int, list[dict]]:
         # Last two tiers: the user's configured output folder (if they ever
         # set one), else beside the input as the final fallback. An explicit
         # input path used to skip straight past the configured folder to
-        # "beside the input" — see _default_out_dir_from_prefs.
+        # "beside the input", see _default_out_dir_from_prefs.
         configured = _default_out_dir_from_prefs()
         if configured is not None:
             out_path = (configured / f"{path.stem}.wdgwars.json").resolve()
@@ -3058,7 +3058,7 @@ def _do_upload(records: list[dict], args) -> int:
             return rc
         key = load_key(args.key)
         if not key:
-            print("[muninn] no key saved — skipping upload. Your local JSON "
+            print("[muninn] no key saved, skipping upload. Your local JSON "
                   "file(s) were still written.", file=sys.stderr)
             return 0
     return upload(records, key, args.api_url,
@@ -3222,7 +3222,7 @@ def _refresh_wrappers(script_dir: Path) -> None:
     them too. The list is hard-coded rather than fetched from a remote
     manifest so the update path can never be steered into writing
     arbitrary filenames. A wrapper that fails to download is skipped
-    with a warning — the muninn.py update is never rolled back over a
+    with a warning. The muninn.py update is never rolled back over a
     wrapper. Wrappers the user deleted are respected and not re-planted.
     """
     for name in WRAPPER_SCRIPTS:
@@ -3245,7 +3245,7 @@ def _refresh_wrappers(script_dir: Path) -> None:
 
 def _pip_install_requirements(script_dir: Path) -> None:
     """Best-effort `python -m pip install -r requirements.txt` against the
-    interpreter currently running muninn. Never fails the caller — prints
+    interpreter currently running muninn. Never fails the caller, prints
     a clear hint if pip is missing or the install errors out, so the
     update return code still reflects the muninn.py update itself."""
     import subprocess
@@ -3336,7 +3336,7 @@ def _update_from_raw(script_dir: Path) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description=f"Muninn v{__version__} — Convert ADS-B capture text files "
+        description=f"Muninn v{__version__}. Convert ADS-B capture text files "
                     f"to WDGWars aircraft JSON, and optionally upload to wdgwars.pl.",
         epilog="Format is auto-detected (AVR raw / SBS-1 / dump1090 JSON / "
                "generic CSV / PortaPack Mayhem / RTL1090 BaseStation .sqb). "
@@ -3354,7 +3354,7 @@ def main() -> int:
                          "Not required when using --save-key or --whoami. "
                          "Unquoted paths with spaces are auto-joined.")
     ap.add_argument("--setup", action="store_true",
-                    help="interactive first-time setup — prompts for your "
+                    help="interactive first-time setup, prompts for your "
                          "WDGWars API key, validates it, saves it locally.")
     ap.add_argument("--save-key", metavar="KEY",
                     help="non-interactive: save the given API key to the user "
@@ -3460,11 +3460,11 @@ def main() -> int:
     global _QUIET
     _QUIET = args.quiet
 
-    # Self-update mode — handle first, doesn't need an input
+    # Self-update mode. Handle first, doesn't need an input
     if args.update:
         return _run_update()
 
-    # Show config — pure read, no side effects.
+    # Show config. Pure read, no side effects.
     if args.show_config:
         print(f"Muninn v{__version__}")
         print(f"Config dir:   {_config_dir()}")
@@ -3478,12 +3478,12 @@ def main() -> int:
         print(f"API key:      {'set (' + str(kp) + ')' if kp.exists() else 'not set'}")
         return 0
 
-    # Reset folder choice — does not touch the API key.
+    # Reset folder choice. Does not touch the API key.
     if args.reset:
         p = _folders_config_path()
         if p.exists():
             p.unlink()
-            print(f"[muninn] removed {p} — next run will re-prompt for folder choice.",
+            print(f"[muninn] removed {p}. Next run will re-prompt for folder choice.",
                   file=sys.stderr)
         else:
             print("[muninn] no saved folder choice to reset.", file=sys.stderr)
@@ -3500,7 +3500,7 @@ def main() -> int:
 
     _check_dump1090_net()
 
-    # Key management modes — handle before requiring an input file
+    # Key management modes, handle before requiring an input file
     if args.setup:
         return interactive_setup()
     if args.save_key:
@@ -3521,11 +3521,11 @@ def main() -> int:
     if args.whoami:
         key = load_key(args.key)
         if not key:
-            sys.exit("no API key found — run `python3 muninn.py --setup` "
+            sys.exit("no API key found. Run `python3 muninn.py --setup` "
                      "for first-time setup")
         return check_whoami(key)
 
-    # Live TCP stream mode — no input file/directory needed at all.
+    # Live TCP stream mode, no input file/directory needed at all.
     if args.stream:
         try:
             host, port = _parse_stream_target(args.stream)
@@ -3559,7 +3559,7 @@ def main() -> int:
                       f"from {default_in} -> {default_out}",
                       file=sys.stderr)
             else:
-                print(f"[muninn] {default_in} is empty — drop your ADS-B "
+                print(f"[muninn] {default_in} is empty. Drop your ADS-B "
                       f"capture in there and re-run.", file=sys.stderr)
                 print(f"[muninn]   Supported: .txt (AVR/SBS-1/Mayhem), "
                       f".csv (generic, --csv-format), .json (dump1090/readsb), .log",
@@ -3579,13 +3579,13 @@ def main() -> int:
     raw = args.input if isinstance(args.input, list) else [args.input]
     # Reject control characters (NUL/newline) before the value touches the
     # filesystem. The path is otherwise free to point anywhere the operator
-    # can reach — this is a local CLI, not a sandbox (see SECURITY.md).
+    # can reach. This is a local CLI, not a sandbox (see SECURITY.md).
     for _piece in raw:
         _reject_control_chars(str(_piece), "input path")
     joined = " ".join(raw)
     if len(raw) > 1 and Path(joined).exists():
         path = Path(joined)
-        print(f"[muninn] note: input path had unquoted spaces — interpreting as "
+        print(f"[muninn] note: input path had unquoted spaces, interpreting as "
               f"{path.name!r}. (quote the path to silence this.)", file=sys.stderr)
     else:
         path = Path(raw[0])
@@ -3595,7 +3595,7 @@ def main() -> int:
                  f"hint: on Windows, wrap paths with spaces in double quotes:\n"
                  f'  python3 muninn.py "C:\\path with spaces\\file.txt"')
 
-    # Watch mode — directory, loop forever
+    # Watch mode, directory, loop forever
     if args.watch:
         return watch_dir(path, args)
 
@@ -3648,6 +3648,6 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except _UnsafeInput as _e:
-        # Rejected path/glob input — one friendly line, no traceback.
+        # Rejected path/glob input, one friendly line, no traceback.
         print(f"[muninn] {_e}", file=sys.stderr)
         sys.exit(2)

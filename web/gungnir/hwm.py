@@ -17,7 +17,7 @@ File layout::
         "last_upload_payload": {...}  # full server response for debugging
     }
 
-The ``counters`` field is the agreed source of truth — consumers should
+The ``counters`` field is the agreed source of truth. Consumers should
 read from it rather than parsing ``last_upload_payload``. We intentionally
 do NOT extract one number to a top-level field; "imported" means different
 things to different slots (aircraft vs networks vs meshcore) and exposing
@@ -47,7 +47,7 @@ def _extract_counters(payload: dict) -> dict:
     """Pull every known counter from the response into its own dict.
 
     Anything the server returned that we don't recognize is preserved
-    in `last_upload_payload` — only known counters land in the structured
+    in `last_upload_payload`, only known counters land in the structured
     `counters` field so consumers have a stable schema to read."""
     return {k: int(payload.get(k, 0) or 0) for k in KNOWN_COUNTERS if k in payload}
 

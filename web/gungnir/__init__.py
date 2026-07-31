@@ -1,4 +1,4 @@
-"""gungnir — shared transport client for the WDGWars (wdgwars.pl) feeders.
+"""gungnir, shared transport client for the WDGWars (wdgwars.pl) feeders.
 
     *Odin's spear. Always hits its target.*
 
@@ -40,15 +40,15 @@ from .transport import (
 # /endpoint/* is a server-side PHP router alias of /api/* that bypasses
 # Cloudflare's per-IP L7 DDoS rate-limit. Same router, same HMAC envelope,
 # same response, but the URL pattern doesn't trip CF's automatic DDoS
-# protection — relevant for batch uploaders that burst-POST aircraft /
+# protection - relevant for batch uploaders that burst-POST aircraft /
 # networks / etc. Flipped from /api/upload/ in v0.1.2 (2026-05-31) after
 # CF L7 protection started 429ing /api/* bursts before reaching origin
 # PHP. Consumers can still force /api/upload/ via the `api_url` kwarg.
-# /api/me stays on /api/* — single-call, not affected by burst limits.
+# /api/me stays on /api/* - single-call, not affected by burst limits.
 DEFAULT_API_URL = "https://wdgwars.pl/endpoint/upload/"
 ME_API_URL = "https://wdgwars.pl/api/me"
 
-# Characters that must not appear in a tool name — they'd let a caller
+# Characters that must not appear in a tool name - they'd let a caller
 # escape the config dir or create invalid paths on Windows.
 _TOOL_NAME_FORBIDDEN = ("/", "\\", "\x00", "..")
 
@@ -97,7 +97,7 @@ def _validate_tool_name(tool: str) -> None:
 class Client:
     """Bundles per-tool identity (name + version) and transport defaults
     so callers don't have to thread them through every method. Stateless
-    beyond construction args — safe to create one per program and reuse.
+    beyond construction args, safe to create one per program and reuse.
 
     :param tool: short tool identifier (e.g. ``"muninn"``). Used in the
         User-Agent header, log lines, and the per-tool config dir. Must
@@ -109,7 +109,7 @@ class Client:
     :param timeout: per-request timeout in seconds for ``send()``.
         Default 120.
     :param whoami_timeout: per-request timeout for ``whoami()``. Default
-        30s — whoami should be fast.
+        30s. Whoami should be fast.
     :param max_attempts: retry attempts on transient errors (5xx + network).
         Default 3. 4xx errors are not retried; 429 raises BatchAborted.
     :param chunk_cooldown: seconds to sleep between chunks in a batched
@@ -172,7 +172,7 @@ class Client:
         """GET ``/api/me`` to validate ``key``. Returns shell exit code.
 
         ``timeout`` defaults to the Client's ``whoami_timeout`` (30s). Pass
-        an explicit value to override — no silent clamping.
+        an explicit value to override, no silent clamping.
         """
         return transport.whoami(
             self.tool, self.version, self.me_url, key,
@@ -196,7 +196,7 @@ class Client:
         """POST records to the signed endpoint.
 
         Caller must supply exactly one of ``aircraft``/``networks``/
-        ``meshcore_nodes`` — see :func:`transport.send` for details.
+        ``meshcore_nodes``, see :func:`transport.send` for details.
 
         Returns shell exit code (0 ok, 1 fail).
         """

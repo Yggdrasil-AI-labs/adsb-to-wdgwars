@@ -5,12 +5,12 @@ Responsibilities (in order of importance):
 1. **Signed POST** to ``/api/upload/`` using the HMAC envelope from
    :mod:`gungnir.envelope`.
 2. **Retry transient failures** (5xx and network errors) with exponential
-   backoff — 3 attempts by default, starting at 2s.
+   backoff, 3 attempts by default, starting at 2s.
 3. **Bail the whole batch on 429** by raising :class:`BatchAborted`. Cron
    jobs that ignored a rate-limit and kept pushing more chunks would only
    deepen the cooldown.
 4. **Silent-drop detection** on every accepted response (the v1.11.1
-   lesson — see :mod:`gungnir.diagnostics`).
+   lesson, see :mod:`gungnir.diagnostics`).
 5. **Inter-chunk cooldown** to keep the server from drowning under a
    30-chunk batch hitting it back-to-back.
 6. **Key redaction** in every log line via :func:`gungnir.keys.scrub`.
@@ -68,7 +68,7 @@ def _user_agent(tool: str, version: str, extra: str | None = None) -> str:
 
 class BatchAborted(Exception):
     """Raised by :func:`send_chunk` when the whole batch should stop, not
-    just this chunk. Primarily 429 — continuing would deepen the cooldown.
+    just this chunk. Primarily 429. Continuing would deepen the cooldown.
 
     Attributes:
         reason: short human-readable cause (e.g. "rate limited (429)")
@@ -115,7 +115,7 @@ def whoami(
                 err = data.get("error", "unknown")
                 log.error("[%s] key rejected: %s", tool, scrub(err, key))
                 return 1
-            log.info("[%s] key OK — user=%s", tool, data.get("username"))
+            log.info("[%s] key OK. User=%s", tool, data.get("username"))
             log.info("[%s]   wifi=%s ble=%s aircraft=%s total=%s",
                      tool,
                      data.get("wifi", 0), data.get("ble", 0),
@@ -150,11 +150,11 @@ def send_chunk(
     backoff. Returns ``(rc, parsed_response)`` where rc==0 on success, 1
     on permanent failure.
 
-    Raises :class:`BatchAborted` on 429 — the caller's batch loop should
+    Raises :class:`BatchAborted` on 429. The caller's batch loop should
     stop, not just skip this chunk.
 
     The silent-drop pattern (HTTP 200 ok:true with every counter zero)
-    surfaces as rc=1, not BatchAborted — only this chunk is suspect, not
+    surfaces as rc=1, not BatchAborted. Only this chunk is suspect, not
     the whole batch.
 
     To skip backoff sleeps in tests, mock ``gungnir.transport.time.sleep``.
@@ -197,7 +197,7 @@ def send_chunk(
                 )
                 if sd is not None:
                     log.warning(
-                        "HTTP 200 ok:true but every counter zero — %d records "
+                        "HTTP 200 ok:true but every counter zero, %d records "
                         "sent. Raw response: %s",
                         sent_count, scrub(sd.raw_text_excerpt, key),
                     )
@@ -270,7 +270,7 @@ def send(
 
     **Contract:** caller must supply exactly one of ``aircraft``,
     ``networks``, or ``meshcore_nodes``. Zero or more than one raises
-    ``ValueError`` — the wire shape allows mixed payloads but no real
+    ``ValueError``, the wire shape allows mixed payloads but no real
     feeder needs that, so the API forbids it to keep the contract clear.
 
     Returns 0 on success, 1 if any chunk failed (including silent drops).
@@ -278,7 +278,7 @@ def send(
     after recording the cooldown.
 
     An empty list for the supplied slot is a no-op (logs and returns 0)
-    rather than an error — cron jobs that have nothing to upload are
+    rather than an error. Cron jobs that have nothing to upload are
     expected, not exceptional.
 
     ``chunk_cooldown`` is the sleep between chunks (default 1s). Set to 0
@@ -347,7 +347,7 @@ def send(
             if badges:
                 log.info("new badges: %s", badges)
 
-        # Polite inter-chunk delay. No sleep after the final chunk —
+        # Polite inter-chunk delay. No sleep after the final chunk,
         # the cron job is done and shouldn't wait.
         if not is_last and chunk_cooldown > 0 and not dry_run:
             time.sleep(chunk_cooldown)

@@ -76,7 +76,7 @@ Either freeze the comparison clock on both sides, or diff with
 dump1090 / readsb / tar1090 use the **file-level `now` epoch** for every
 record (formatted as UTC `Y-m-d H:i:s`), not `now - seen_pos`. A naive
 read of dump1090's per-aircraft `seen_pos` suggests subtracting it from
-`now` to get the position-fix time — Muninn deliberately doesn't, because
+`now` to get the position-fix time. Muninn deliberately doesn't, because
 the snapshot timestamp is the canonical "when this record was observed"
 and per-aircraft `seen_pos` drift is recorded elsewhere. Portal-side
 ports should match: file-level `now` on every record.
@@ -93,7 +93,7 @@ fields are empty (header decoded, position frame partial). Muninn's
 extractor drops it at parse time because it requires lat/lon to
 instantiate a per-ICAO record. A portal-side parser that instantiates
 on any valid ICAO row will produce 11 extractor entries and then drop
-AC07DC downstream as `mode_s_no_gps` — converging on 10 imported.
+AC07DC downstream as `mode_s_no_gps`, converging on 10 imported.
 
 Both behaviours are correct. The diff hits if comparison is run
 **before** the validation/no-GPS-drop pass on the portal side. If your

@@ -50,7 +50,7 @@ def lint_readme(path: Path) -> list[tuple[int, str, str]]:
         if not block_lines:
             return
         # If any line in the block references a venv form, treat the
-        # block as teaching-the-venv-flow — `python3 muninn.py` inside
+        # block as teaching-the-venv-flow, `python3 muninn.py` inside
         # such a block is intentional (showing the system-Python form
         # the user would hit, with the venv answer nearby).
         block_text = "\n".join(l for _, l in block_lines)

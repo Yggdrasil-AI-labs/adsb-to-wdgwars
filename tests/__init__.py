@@ -3,7 +3,7 @@
 Safety net: refuse to start the test process if the user has a real
 WDGWars API key configured on this host. Test code that exercises
 `--upload` or `--watch` reads the same key from `~/.config/muninn/api.key`
-as production runs do — so a stray test invocation on a developer
+as production runs do, so a stray test invocation on a developer
 workstation can post synthetic data to LOCOSP's prod. Happened once on
 2026-06-01 (v2.0.9 scheduler E2E test → 2 phantom aircraft on the
 operator's live account); the guard exists so it doesn't happen twice.
@@ -15,7 +15,7 @@ the upload path against a sacrificial account), opt in:
 
 The guard runs once at import time and only flags the canonical key
 path. Other key sources (env var WDGWARS_KEY, --key on the command
-line) are out of scope — those require explicit caller intent.
+line) are out of scope, those require explicit caller intent.
 """
 from __future__ import annotations
 import os

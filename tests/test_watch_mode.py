@@ -4,19 +4,19 @@ Added v2.1.3, closing the last of the three silent failures from the
 2026-07-25 live install (systemd lingering, output beside a root-owned
 input, and this one): watch mode pointed at a decoder's own runtime dir
 (`/run/readsb`) installed cleanly and then failed every cycle with no
-visible signal — the per-file output write and the state-file write both
+visible signal. The per-file output write and the state-file write both
 targeted the watched (root-owned) directory, and the write ran BEFORE the
 upload, so the upload never happened either.
 
 Three behaviors under test:
 
-1. `_watch_out_path` — watch mode now uses the same output resolution
+1. `_watch_out_path`. Watch mode now uses the same output resolution
    order as `_process_one_file` (`--out-dir` > configured output folder >
    beside the input, `--no-save` with `--upload` skips the write).
-2. `_resolve_watch_state_path` — state stays in the watched dir when it's
+2. `_resolve_watch_state_path`. State stays in the watched dir when it's
    writable (unchanged), and falls back to a per-directory file under the
    muninn config dir when it isn't.
-3. `_is_rolling_file_pattern` — the scheduler prompt preselects periodic
+3. `_is_rolling_file_pattern`, the scheduler prompt preselects periodic
    mode when the file pattern names one fixed rolling file, so users are
    no longer asked to classify their own decoder.
 

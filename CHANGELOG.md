@@ -9,12 +9,12 @@ All notable changes to Muninn are documented here. Format follows
 Bug-fix release, closing the item the v2.1.2 notes deferred as "a
 watch-mode-against-a-rolling-file issue found the same night is tracked
 separately." The reported symptom was "watch mode never sees the rolling
-file," but the file-change detection was never the problem — watch mode's
+file," but the file-change detection was never the problem, watch mode's
 size+mtime signature has always caught in-place rewrites. The actual
 failure chain: watch mode wrote both its per-file output AND its
 `.adsb-state.json` state file into the watched directory itself, and the
 output write ran *before* the upload. Pointed at a root-owned decoder
-runtime dir (`/run/readsb` — the exact directory `_guess_decoder_dirs()`
+runtime dir (`/run/readsb`, the exact directory `_guess_decoder_dirs()`
 suggests), every cycle decoded cleanly, hit `PermissionError` on the
 write, logged an error nobody sees (no persistent journal on Raspberry Pi
 OS), and never reached the upload. Installed cleanly, ran on schedule, did
@@ -24,7 +24,7 @@ nothing.
 
 - **Watch mode now uses the same output-path resolution as everything
   else**: `--out-dir` > the output folder saved by the first-run prompt /
-  `--setup` > beside the input, as a last resort — and honors `--no-save`
+  `--setup` > beside the input, as a last resort. And honors `--no-save`
   with `--upload`. Previously it always wrote beside the input
   (`_watch_out_path`).
 - **A failed local write no longer blocks the upload in watch mode.** The
@@ -36,7 +36,7 @@ nothing.
   directory isn't writable** (`_resolve_watch_state_path`, one file per
   watched dir, keyed by a path hash). Writable dirs keep the existing
   in-dir `.adsb-state.json` behavior and its S2083 symlink check. A
-  state-write failure also no longer counts as a per-file error — dedup
+  state-write failure also no longer counts as a per-file error, dedup
   degrades to in-memory for the run, with a single warning.
 
 ### Changed
@@ -54,7 +54,7 @@ nothing.
 
 ### Added
 
-- `tests/test_watch_mode.py` — output resolution order in watch mode
+- `tests/test_watch_mode.py`: output resolution order in watch mode
   (`--out-dir` > configured folder > beside input, `--no-save` handling),
   state-path fallback (writable dir keeps in-dir state, unwritable dir
   falls back to a stable per-directory file under the config dir), and the
@@ -66,7 +66,7 @@ Bug-fix release. Found live: a user ran the README's own one-shot example,
 `./run.sh /run/readsb/aircraft.json --upload`, and it crashed after a clean
 decode with `PermissionError: [Errno 13] Permission denied:
 '/run/readsb/aircraft.wdgwars.json'`. `/run/readsb` is root-owned tmpfs the
-feeder account can read but not write — and `_guess_decoder_dirs()` /
+feeder account can read but not write, and `_guess_decoder_dirs()` /
 the `--schedule` prompt both actively suggest exactly that directory. Under
 a scheduled invocation this fails silently every cycle (no persistent
 journal on Raspberry Pi OS by default); the user only noticed by running
@@ -77,7 +77,7 @@ the command by hand.
 - **Output-path resolution now checks the configured output folder before
   falling back to "beside the input."** Previously, passing an explicit
   input path skipped the user's saved output-folder choice entirely and
-  always wrote next to the input file — the exact directory that, for a
+  always wrote next to the input file, the exact directory that, for a
   decoder's runtime dir, the user can't write to. The order is now
   `--out` > `--out-dir` > the folder saved by the first-run prompt (or
   `--setup`) > beside the input, as a last resort. `--no-save` still wins
@@ -88,25 +88,25 @@ the command by hand.
   actual point of running with `--upload`. `_write_local_output` now warns
   loudly and returns to the caller with decoded records intact so the
   upload still happens. A local-write failure is only a hard failure when
-  `--upload` was NOT requested — in that case the write was the entire
+  `--upload` was NOT requested. In that case the write was the entire
   point of the run, so it fails cleanly with a message instead of quietly
   reporting success.
 - **No more raw tracebacks for a permissions problem.** `PermissionError`
   (and any other `OSError`) on the output path now prints a plain-language
   line naming the exact path, saying it isn't writable, and suggesting
-  `--out-dir` — not a stack trace. The person hitting this is following
+  `--out-dir`, not a stack trace. The person hitting this is following
   documented steps, not debugging Python.
 
 ### Verified, not changed
 
 - The `--schedule` periodic-mode units (systemd `.service`/`.timer`, the
   cron line, and the Windows `schtasks` action) already bake `--no-save`
-  into the generated command for exactly this reason — added before this
+  into the generated command for exactly this reason, added before this
   release and covered by `test_scheduler.py`'s
   `test_periodic_service_uses_no_save` / `test_includes_no_save` /
   `test_periodic_action_uses_no_save`. Periodic mode is the mode paired
   with root-owned runtime dirs like `/run/readsb`, so **no existing
-  `--schedule` install needs to be re-run because of this release** — this
+  `--schedule` install needs to be re-run because of this release**, this
   fix only changes the manual/direct-invocation path (`./run.sh <file>
   --upload`, exactly what tonight's user ran) and the underlying
   resolution logic it shares with every other code path. Watch mode
@@ -116,7 +116,7 @@ the command by hand.
 
 ### Added
 
-- `tests/test_output_resolution.py` — resolution-order tests (configured
+- `tests/test_output_resolution.py`: resolution-order tests (configured
   folder wins over "beside the input" for an explicit path, `--out-dir`
   and `--out` still win over the configured folder, `--no-save` still
   wins over all of it) and failed-local-write tests (upload proceeds with
@@ -129,13 +129,13 @@ the command by hand.
 
 Bug-fix release. Found live: a user set up `--schedule` on a headless Linux
 box, and the honest answer to "what do I run after a power cut?" turned out
-to be "nothing — your uploads already stopped." `--schedule`'s systemd path
+to be "nothing, your uploads already stopped." `--schedule`'s systemd path
 installs and enables a **user** unit (`muninn-upload.service`/`.timer`), which
-looks correct and works immediately — but systemd user units only keep
+looks correct and works immediately. But systemd user units only keep
 running while the installing user has an active login session. Without
 lingering enabled, a reboot or even a plain logout stops the unit with no
 error anywhere. The decoder is a separate system service and keeps running,
-so its web map keeps showing planes — from the outside everything looks
+so its web map keeps showing planes, from the outside everything looks
 healthy while nothing is actually being uploaded.
 
 ### Fixed
@@ -144,20 +144,20 @@ healthy while nothing is actually being uploaded.
   `cmd_schedule_headless`), right after the unit is enabled, Muninn now
   checks `loginctl show-user <user> --property=Linger` and, if it isn't
   already `yes`, attempts `loginctl enable-linger <user>` itself
-  (unprivileged — some systems' polkit policy allows this for the user's
+  (unprivileged, some systems' polkit policy allows this for the user's
   own account). It never prompts for or invokes `sudo`. Success is never
-  reported on the enable command's exit code alone — the property is
+  reported on the enable command's exit code alone. The property is
   re-queried afterward, since a silent no-op here would just reproduce the
   bug this exists to fix. If the attempt fails, or `loginctl` doesn't exist
   on this system (no systemd-logind), Muninn prints a loud warning
   explaining exactly what will break and the exact `sudo loginctl
   enable-linger <user>` command to run.
-- cron and Windows `schtasks` scheduling are unaffected — this only touches
+- cron and Windows `schtasks` scheduling are unaffected, this only touches
   the systemd branch.
 
 ### Added
 
-- `tests/test_scheduler.py::LingerTests` — already-enabled (no-op),
+- `tests/test_scheduler.py::LingerTests`: already-enabled (no-op),
   successful unprivileged enable, failed enable producing the warning, and
   `loginctl` missing entirely. All subprocess calls are mocked; no real
   `loginctl` is ever invoked by the suite.
@@ -172,7 +172,7 @@ latency equal to the poll interval on top of the feed's own delay.
 
 `--stream HOST[:PORT]` connects straight to the TCP feed and uploads
 updates as they arrive, flushing only the aircraft that changed since
-the last flush (`--stream-interval`, default 5s — well under `--watch`'s
+the last flush (`--stream-interval`, default 5s, well under `--watch`'s
 30s default). Auto-reconnects with backoff if the receiver drops the
 link; already-decoded state survives the reconnect and flushes on the
 next successful cycle. Port defaults to 30003 when omitted.
@@ -184,7 +184,7 @@ file-based `--watch` + `parse_beast` path.
 Hardened before release: `--stream` accepts a TCP target the user
 supplies directly (same trust model as `--api-url`, no scanning or
 discovery), but a line-buffering bug meant a peer that never sent a
-newline could grow memory unbounded, and — the subtler case — a huge
+newline could grow memory unbounded, and, the subtler case, a huge
 newline-less run capped by a naive post-hoc check could still leak
 through as one giant garbled line if a newline happened to arrive in
 the same read that crossed the cap. Fixed by length-checking each
@@ -193,27 +193,27 @@ oversized segment is dropped outright, never handed to the caller.
 Verified against a real 1940-line dump1090 SBS-1 capture
 (`examples/sbs1_real.txt`) streamed through the exact socket
 line-reader in small, line-boundary-misaligned chunks and compared
-byte-for-byte against `parse_sbs1()`'s output on the same file — which
+byte-for-byte against `parse_sbs1()`'s output on the same file, which
 also caught a second real bug: the fixture's CRLF endings left a
 trailing `\r` glued onto each line before this fix.
 
 ### Added
-- `--stream HOST[:PORT]` — live TCP ingestion, no input file/directory required.
-- `--stream-interval N` — seconds between upload flushes (default: 5).
-- `--stream` port is validated to the 1–65535 range at parse time.
-- `systemd/muninn-stream@.service` — instantiated unit template for running
+- `--stream HOST[:PORT]`: live TCP ingestion, no input file/directory required.
+- `--stream-interval N`: seconds between upload flushes (default: 5).
+- `--stream` port is validated to the 1, 65535 range at parse time.
+- `systemd/muninn-stream@.service`: instantiated unit template for running
   more than one `--stream` feed without hand-writing a unit per receiver
   (`systemctl enable --now muninn-stream@<host:port>.service`). Static
-  template only, not wired into `--schedule` yet — see README.
+  template only, not wired into `--schedule` yet, see README.
 
 ### Fixed
 - `_read_socket_lines` bounds its buffer to `_STREAM_MAX_LINE_BYTES`
   (64 KiB) and strips a trailing `\r` for CRLF-emitting feeds.
 - `_read_socket_lines` also discards any unterminated buffer on an idle
-  gap, not just when it crosses the size cap — a leftover fragment under
+  gap, not just when it crosses the size cap, a leftover fragment under
   the cap could otherwise sit unresolved across an idle gap and end up
   glued onto the front of the next real line once one finally arrived.
-- `tests/test_stream_tcp.py::RealCaptureParityTests` — streams a real
+- `tests/test_stream_tcp.py::RealCaptureParityTests`: streams a real
   capture through the socket path and diffs it against the file-based
   parser to keep the two in lockstep.
 
@@ -221,14 +221,14 @@ trailing `\r` glued onto each line before this fix.
 
 Bug-fix release. Reported by piratepat_ on Discord: a uConsole/Watch Dogs Go
 generic-CSV dump had multiple rows for the same aircraft, and `parse_csv`
-collapsed them with a blind `rows[icao] = rec` per row — whichever row was
+collapsed them with a blind `rows[icao] = rec` per row. Whichever row was
 iterated last won outright, regardless of data quality. Row order in a
 generic CSV isn't guaranteed to match chronological order per-ICAO either;
 in the reported sample the last row for the affected aircraft was an older,
 degraded observation (`speed_kt=0`, `heading=0`) that overwrote a
 better, later-timestamped row earlier in the file, silently discarding good
 velocity data. The AVR and SBS-1 parsers already merge fields incrementally
-(only overwrite alt/speed/heading/callsign when the new value is truthy) —
+(only overwrite alt/speed/heading/callsign when the new value is truthy),
 the generic CSV path was the one parser that didn't follow that pattern.
 
 ### Fixed
@@ -240,7 +240,7 @@ the generic CSV path was the one parser that didn't follow that pattern.
 ### Added
 
 - `tests/test_adsb_regression.py::test_generic_csv_does_not_clobber_with_degraded_row`
-  — locks in the fix using the reported sample data.
+, locks in the fix using the reported sample data.
 
 ## [2.0.16] - 2026-07-19 - PortaPack/H4M Mayhem "Spd:" ground-speed label + leading timestamp column
 
@@ -251,7 +251,7 @@ ADSB.TXT capture on 2026-07-19: all 113 decoded aircraft came through with
 `gs:0` because `Spd:` was never matched. The same firmware also prepends a
 `YYYYMMDDHHMMSS` timestamp column to each line; because detection sniffs
 `s[:14]` (alnum with or without the timestamp) and every field is
-label-anchored, that variant already routed and parsed — this release adds
+label-anchored, that variant already routed and parsed. This release adds
 coverage to lock it in.
 
 ### Fixed
@@ -262,11 +262,11 @@ coverage to lock it in.
 
 ### Added
 
-- `tests/test_adsb_regression.py` — two regression tests: the `Spd:` label
+- `tests/test_adsb_regression.py`: two regression tests: the `Spd:` label
   populates `speed_kt`, and the leading-timestamp variant still detects as
   `mayhem` and parses callsign/speed/altitude without mistaking the
   timestamp column for a bare callsign token.
-- `parity-fixtures/mayhem/sample.txt` + `examples/mayhem_sample.txt` — two
+- `parity-fixtures/mayhem/sample.txt` + `examples/mayhem_sample.txt`, two
   new fixture lines (a `Spd:` line and a timestamped line); the mayhem
   parity artifact was regenerated against v2.0.16 (now 8 records).
 
@@ -276,8 +276,8 @@ coverage to lock it in.
 
 - **`--update` now refreshes the six wrapper scripts** (`run`/`setup`/
   `update` `.sh`/`.bat`) on the raw-download (ZIP install) path, closing the
-  family bug (documented 2026-06-04) where a fix living in a wrapper — like
-  v2.0.12's `run.bat` arg-forwarding repair — could never reach ZIP-installed
+  family bug (documented 2026-06-04) where a fix living in a wrapper, like
+  v2.0.12's `run.bat` arg-forwarding repair. Could never reach ZIP-installed
   users through self-update. The list is hard-coded, not a remote manifest,
   so the update path can never be steered into writing arbitrary filenames.
   Wrapper download failures warn and continue; deleted wrappers are
@@ -295,7 +295,7 @@ coverage to lock it in.
   (the argparse value; 500 was the pre-v2.0 chunk size), the flag block now
   lists `--preview` and all six `--schedule*` flags, and the "Range and feed
   sanity checks" section has its port numbers (30104 Beast / 30001 raw) and
-  example warning output restored — both had been blank since the section
+  example warning output restored. Both had been blank since the section
   was written.
 - Dead code: unreachable trailing `return 0` in `main()` removed.
 
@@ -303,7 +303,7 @@ coverage to lock it in.
 
 Bug-fix release. Periodic schedules (systemd timer, cron, and Windows
 schtasks) ran `muninn.py <dir> --upload`, which wrote the audit-trail
-`*.wdgwars.json` back **next to the input file** — i.e. into the decoder's
+`*.wdgwars.json` back **next to the input file**: i.e. into the decoder's
 output dir. For the decoders periodic mode targets (readsb → `/run/readsb`,
 dump1090-fa → `/run/dump1090-fa`), that dir is a runtime tmpfs the feeder
 user can't write to (and that resets permissions / is wiped on reboot), so
@@ -313,7 +313,7 @@ cron job and manually relocating the output file to work around it.
 
 Periodic mode now bakes `--no-save` into the generated command: it reads
 the rolling input file (reads were never the problem), uploads from memory,
-and skips the local write entirely. Watch mode is unchanged — it manages
+and skips the local write entirely. Watch mode is unchanged, it manages
 files in a user-writable dir where the audit JSON write is fine and useful.
 
 ### Fixed
@@ -324,7 +324,7 @@ files in a user-writable dir where the audit JSON write is fine and useful.
 
 ### Added
 
-- `tests/test_scheduler.py` — coverage asserting `--no-save` is present in
+- `tests/test_scheduler.py`: coverage asserting `--no-save` is present in
   every periodic variant and absent from watch mode.
 
 ### Upgrade note
@@ -354,21 +354,21 @@ symlinked watch state file, a capture dir carrying a `$(...)` substitution).
   `_reject_control_chars`, `_user_path`, `_state_path_for`, `_sqlite_ro_uri`,
   `_systemd_quote`, `_schtasks_arg`, and an `_UnsafeInput` error surfaced as a
   friendly one-line message + exit code 2.
-- `tests/test_security.py` — regression coverage for every hardened path.
-- `SECURITY-FINDINGS.md` — disposition of all 21 SonarCloud findings.
+- `tests/test_security.py`: regression coverage for every hardened path.
+- `SECURITY-FINDINGS.md`: disposition of all 21 SonarCloud findings.
 
 ### Fixed
 
-- **S2083 (BLOCKER)** — watch-mode `.adsb-state.json` write is now confined to
+- **S2083 (BLOCKER)**: watch-mode `.adsb-state.json` write is now confined to
   the watched directory and refuses a symlinked state file.
-- **S5443 (CRITICAL)** — decoder-dir suggestions exclude symlinked candidates,
+- **S5443 (CRITICAL)**: decoder-dir suggestions exclude symlinked candidates,
   so a redirected `/tmp/dump1090` is never offered.
-- **S8706 (×2)** — `.sqb` files are opened via a `pathname2url`-encoded
+- **S8706 (×2)**: `.sqb` files are opened via a `pathname2url`-encoded
   read-only URI, so a filename can't override `mode=ro`.
-- **S6350 / S8705 (×3)** — capture dir + glob baked into systemd/cron/schtasks
+- **S6350 / S8705 (×3)**: capture dir + glob baked into systemd/cron/schtasks
   entries are quoted (`shlex.quote` for cron, double-quoting for
   systemd/schtasks) and the glob is whitelisted; newlines/NUL rejected.
-- **S8707 / S6549 (×14)** — CLI paths feeding persisted artifacts are
+- **S8707 / S6549 (×14)**: CLI paths feeding persisted artifacts are
   normalised + validated; output destinations (`--out`, `--out-dir`, input)
   are normalised and control-char-checked (accept-by-design, see SECURITY.md).
 
@@ -412,7 +412,7 @@ of four PRs in that sweep. No behavior change for interactive users.
 
 - `_prompt_yes_no` and `_prompt_yes_no_simple` now emit an explicit
   newline after consuming a piped-stdin answer. Interactive TTY
-  input gets its own newline from the terminal — piped input
+  input gets its own newline from the terminal, piped input
   doesn't, which previously glued the next section header onto the
   prompt line in scripted runs.
 - `setup.sh` / `run.sh` / `update.sh` now `[ -t 0 ]`-gate the
@@ -425,7 +425,7 @@ of four PRs in that sweep. No behavior change for interactive users.
   in CI.
 - `scripts/smoke.sh` `--schedule` assertion section is now gated on
   Linux+systemd, matching wigle's gate. Previously it would attempt
-  the systemd-unit-write path on every OS — on Windows it dispatched
+  the systemd-unit-write path on every OS, on Windows it dispatched
   to `schtasks /Create`, where long temp-directory paths combined
   with the python+muninn.py+flags action string blew through the
   schtasks `/TR` 261-char cap. The path isn't broken in real
@@ -444,7 +444,7 @@ records as JSON-lines on stdout, then exits. No file write, no upload.
 
 Mirrors Heimdall's `--preview` exactly so muscle memory transfers across
 the feeder family. A Pi24 user tried `muninn.py ... --preview` earlier
-today after using Heimdall and got `unrecognized arguments` — easy fix.
+today after using Heimdall and got `unrecognized arguments`, easy fix.
 
 ### Added
 
@@ -455,10 +455,10 @@ today after using Heimdall and got `unrecognized arguments` — easy fix.
 
 ### Unchanged
 
-- `--stdout` (full JSON dump to stdout) — still works, still distinct
+- `--stdout` (full JSON dump to stdout), still works, still distinct
   from `--preview`. Use `--preview` to confirm parsing; `--stdout` to
   capture the full converted payload.
-- `--upload --dry-run` — still the right combo for testing the upload
+- `--upload --dry-run`: still the right combo for testing the upload
   pipeline without POSTing. `--preview` skips the upload pipeline entirely.
 - All v2.0.9 scheduler behavior, --schedule flags, --schedule-dry-run.
 
@@ -471,18 +471,18 @@ Two modes:
 - **Watch.** Long-running daemon that uploads new files as soon as they
   appear in the decoder's output folder. Best for decoders that write
   a new file per capture session (tar1090 chunks, NDJSON sessions).
-- **Periodic.** Every N minutes (configurable, 1–60), Muninn scans the
+- **Periodic.** Every N minutes (configurable, 1, 60), Muninn scans the
   folder and uploads. Best for decoders that rewrite a single rolling
   file in place (dump1090-fa, readsb, VRS).
 
-Per-platform mechanism (user-scope only — no sudo):
+Per-platform mechanism (user-scope only, no sudo):
 
 - **Linux with systemd:** writes `muninn-upload.service` (+ `.timer` for
   periodic mode) to `~/.config/systemd/user/`, runs `daemon-reload` +
   `enable --now`. Survives reboots, journald handles logging, `Restart=on-failure`
   keeps watch mode alive across transient errors.
 - **macOS / Linux without systemd:** appends a user-crontab entry with a
-  `managed-by-muninn` marker comment. Periodic only — cron can't run
+  `managed-by-muninn` marker comment. Periodic only. Cron can't run
   daemons, so watch mode falls back to a printed command for manual
   invocation.
 - **Windows:** `schtasks /Create` at user scope. `/SC ONSTART` for watch
@@ -490,7 +490,7 @@ Per-platform mechanism (user-scope only — no sudo):
 
 The interactive flow shows the exact unit / cron line / schtasks command
 that will be installed and asks **"Install now?"** before touching the
-user's system — no silent mutations.
+user's system, no silent mutations.
 
 ### Added
 
@@ -506,7 +506,7 @@ user's system — no silent mutations.
   Interactive flow defaults dry-run to **yes** for safety.
 - `--unschedule` flag: removes every Muninn-managed scheduled task on
   this host (systemd user units, marked cron entries, Windows scheduled
-  tasks). Idempotent — safe to run when nothing is installed.
+  tasks). Idempotent. Safe to run when nothing is installed.
 - New section in `interactive_setup()` that calls `interactive_schedule_setup()`
   after the API key is saved. Schedule setup defaults to "No" so existing
   users who just want their key saved aren't pushed into anything.
@@ -520,7 +520,7 @@ user's system — no silent mutations.
 
 The unit / cron / schtasks generators are pure functions (input →
 string / argv list, no I/O). New `tests/test_scheduler.py` covers them
-in isolation — 23 tests, no live mutations. The installers that wrap
+in isolation, 23 tests, no live mutations. The installers that wrap
 them are exercised live during release verification.
 
 ### Verified live on Ubuntu 24.04 (systemd)
@@ -552,7 +552,7 @@ is not installed on every Raspberry Pi OS image), the script prints
 the exact `sudo apt install -y python3-venv python3-full` line and
 exits cleanly instead of leaving a half-installed state.
 
-Windows `setup.bat` is unchanged — Windows Python ships without PEP 668
+Windows `setup.bat` is unchanged. Windows Python ships without PEP 668
 enforcement, so `python -m pip install` still works there.
 
 ### Fixed
@@ -603,12 +603,12 @@ Python-side hang inside `pyodide.runPython()`, not a thrown exception.
 The web (Pyodide) build advertises `.sqb` in the drop zone, but dropping
 a real BaseStation SQLite file produced `[ERR] Couldn't parse
 BaseStation.sqb.` Pyodide unvendors `sqlite3` from the bundled stdlib
-into a separately-loadable package — without an explicit
+into a separately-loadable package, without an explicit
 `pyodide.loadPackage("sqlite3")` before muninn's import, `parse_sqb`'s
 `import sqlite3` raises `ModuleNotFoundError` at parse time and the
 web UI surfaces a friendly catch-all error.
 
-CLI was never affected — real CPython has sqlite3 baked into the stdlib.
+CLI was never affected. Real CPython has sqlite3 baked into the stdlib.
 SQB support has worked on CLI since v2.0.0; this just brings the web
 build in line.
 
@@ -623,7 +623,7 @@ build in line.
 - CLI behaviour unchanged (regression sweep on `sbs1_real` / `stratux` /
   `mayhem` still hits 10 / 12 / 6).
 - Real BaseStation SQB (637 aircraft, 788 flights) parses cleanly on
-  CLI to 1146 records — same expected output now flows through the
+  CLI to 1146 records, same expected output now flows through the
   web build.
 
 ## [2.0.5] - 2026-05-31 - gungnir bump to v0.1.2 (upstream the /endpoint/* default)
@@ -648,7 +648,7 @@ inherits the bypass without duplicating the override.
 ### Unchanged
 
 - `web/serve.py` upstream and `web/app.js` localStorage default were
-  already on `/endpoint/upload/` from v2.0.4 — they don't pull from
+  already on `/endpoint/upload/` from v2.0.4, they don't pull from
   gungnir, so no further change needed.
 - `--api-url` flag unchanged. Force `/api/upload/` with
   `--api-url https://wdgwars.pl/api/upload/` if needed.
@@ -661,7 +661,7 @@ protection per-IP-rate-limits bursts of `/api/*` requests with HTTP
 429 + error code 1027 BEFORE the request reaches the origin's PHP
 router. The portal can't override the `ddos_l7` phase on free CF.
 
-At batch scale (Muninn's whole point — feeding a cron-driven RTL-SDR
+At batch scale (Muninn's whole point, feeding a cron-driven RTL-SDR
 rig that accumulates aircraft over a shift, then bulk-uploads),
 this surfaces as intermittent 429s that gungnir's cooldown logic
 treats as a real server signal, deepening the back-off.
@@ -689,7 +689,7 @@ flipped today.
 
 ### Notes
 
-- `gungnir.DEFAULT_API_URL` is unchanged — other consumers
+- `gungnir.DEFAULT_API_URL` is unchanged, other consumers
   (`wigle-to-wdgwars`, future feeders) keep the `/api/*` default
   until they bump independently. Muninn overrides locally.
 - `--api-url` flag unchanged. Force `/api/upload/` with
@@ -702,7 +702,7 @@ flipped today.
 Muninn was pinned to gungnir commit `3ceac29d` (gungnir 0.1.0), while
 [wigle-to-wdgwars 1.1.1](https://github.com/HiroAlleyCat/wigle-to-wdgwars)
 pinned `v0.1.1`. Anyone running both tools from the same Python (no
-venv) saw the pins fight on every install — one would downgrade or
+venv) saw the pins fight on every install. One would downgrade or
 upgrade the other.
 
 gungnir 0.1.0 → 0.1.1 contains zero code changes (CHANGELOG docs +
@@ -730,7 +730,7 @@ defensive Python-version checks to the wrapper scripts.
 
 - **`muninn.py --update` no longer leaves users with a broken install
   on dep-bumping releases.** The previous `--update` was one-file-only
-  — it refreshed `muninn.py` but not `requirements.txt`. A user on
+, it refreshed `muninn.py` but not `requirements.txt`. A user on
   v1.x running `--update` would land on a v2.x `muninn.py` that
   hard-imports `gungnir`, while their local `requirements.txt` still
   reflected v1.x's stdlib-only dependency footprint. The next
@@ -765,7 +765,7 @@ defensive Python-version checks to the wrapper scripts.
   error.
 
 - `_fetch_raw(path, dest)` and `_pip_install_requirements(script_dir)`
-  helpers in `muninn.py` — used by `--update` to refresh sibling files
+  helpers in `muninn.py`. Used by `--update` to refresh sibling files
   atomically and invoke pip against the currently-running interpreter.
 
 ### Documentation
@@ -791,18 +791,18 @@ defensive Python-version checks to the wrapper scripts.
 
 ### Added
 
-- `_version_tuple(s)` helper — parses dotted versions with tolerance
+- `_version_tuple(s)` helper, parses dotted versions with tolerance
   for the leading `v` and pre-release/build suffixes. Unparseable
   versions return an empty tuple so the check skips gracefully.
 
 ## [2.0.0] - 2026-05-28 - Extract transport to gungnir
 
-Structural refactor. **No wire-protocol change** — the HMAC envelope
+Structural refactor. **No wire-protocol change**: the HMAC envelope
 sent to wdgwars.pl is byte-identical to v1.11.1 (verified by
 `gungnir/tests/test_muninn_parity.py`). Existing cron jobs continue to
 work without any change to their invocation. Existing API keys at
 `~/.config/muninn/api.key` and `%APPDATA%/muninn/api.key` are read in
-place — config path is unchanged.
+place. Config path is unchanged.
 
 ### Changed
 
@@ -883,7 +883,7 @@ place — config path is unchanged.
   imported, 6 already on file, 4 new badges. HMAC envelope + ICAO fix
   both confirmed in one run.
 
-## [1.10.0] — 2026-05-24 — Retract v1.9.0 Zigbee support
+## [1.10.0] - 2026-05-24. Retract v1.9.0 Zigbee support
 
 ### Removed
 - **All v1.9.0 Zigbee / 802.15.4 capture support is withdrawn.** The
@@ -934,7 +934,7 @@ If you installed v1.9.0 and were using Zigbee features:
 3. If you have local Zigbee captures you want to publish, hold them
    until/unless WDGoWars announces a dedicated Zigbee channel.
 
-## [1.8.1] — 2026-05-15
+## [1.8.1] - 2026-05-15
 
 ### Changed
 - **GDL-90 parser promoted from experimental to validated.** Authoritative
@@ -949,10 +949,10 @@ If you installed v1.9.0 and were using Zigbee features:
   proving the binary-container parser produces output identical to
   parse_avr on the same underlying Mode-S frames.
 
-## [1.8.0] — 2026-05-15
+## [1.8.0] - 2026-05-15
 
 ### Added
-- **Stratux JSON** — the `/traffic` endpoint output from Stratux DIY
+- **Stratux JSON**: the `/traffic` endpoint output from Stratux DIY
   cockpit receivers. Top-level dict keyed by ICAO hex, values are
   aircraft dicts using `Icao_addr`/`Tail`/`Reg`/`Lat`/`Lng`/`Alt`/
   `Speed`/`Track`/`Position_valid` field names. Detected by the
@@ -964,7 +964,7 @@ If you installed v1.9.0 and were using Zigbee features:
   0x32 / 0x33. Mode-S short and long messages are extracted as hex
   and fed into pyModeS PipeDecoder (same path as parse_avr), so all
   the CPR-pairing / callsign-merging / altitude-tracking logic is
-  shared. CRC validation is currently skipped — accept anything that
+  shared. CRC validation is currently skipped, accept anything that
   decodes cleanly.
 
 ### Fixed
@@ -974,34 +974,34 @@ If you installed v1.9.0 and were using Zigbee features:
   using the correct keys; the first draft of parse_beast wasn't.
   Now both go through the same key set.
 
-## [1.7.0] — 2026-05-15
+## [1.7.0] - 2026-05-15
 
 ### Added (experimental)
-- **GDL-90 binary format** — the protocol cockpit ADS-B receivers speak
+- **GDL-90 binary format**: the protocol cockpit ADS-B receivers speak
   (Stratux, ForeFlight Sentry, Garmin GDL series). Decodes Traffic
   Report (msg 0x14) and Ownship Report (msg 0x0A) frames, handles the
   0x7E/0x7D byte-stuffing per FAA Public ICD Rev A. Detected by the
   0x7E flag byte followed by a known message ID.
 
-  **EXPERIMENTAL — needs real-capture validation.** Implemented from
+  **EXPERIMENTAL. Needs real-capture validation.** Implemented from
   spec without a test corpus. The synthetic-frame round-trip in
   `examples/gdl90_synthetic.gdl90` passes, but field offsets, scaling
   factors, and CRC handling have not been verified against an actual
   Stratux/Sentry log. If you have a GDL-90 binary capture, please
   open an issue with a sample so the parser can be validated.
 
-  CRC-16-CCITT FCS validation is currently skipped — frames that
+  CRC-16-CCITT FCS validation is currently skipped, frames that
   unescape cleanly and have a known message ID are accepted. This may
   change if real-world streams contain frame-aligned noise.
 
 ### Note on what we deliberately do NOT support
 - **OpenSky Network**, **FlightAware**, **ADS-B Exchange** and similar
   aggregator-API formats are explicitly out of scope. WDGoWars is a
-  wardriving game — the point is uploading what *your* receiver heard.
+  wardriving game. The point is uploading what *your* receiver heard.
   Importing aggregated network data would defeat that and pollute the
   game's contribution model.
 
-## [1.6.1] — 2026-05-15
+## [1.6.1] - 2026-05-15
 
 ### Fixed
 - `detect_format` now skips `;`-prefixed comment lines in addition to
@@ -1013,17 +1013,17 @@ If you installed v1.9.0 and were using Zigbee features:
   `; Sample AVR raw Mode-S ...`. End-to-end regression sweep added in
   `examples/README.md` catches this class of bug.
 
-## [1.6.0] — 2026-05-15
+## [1.6.0] - 2026-05-15
 
 ### Added
-- **VRS (VirtualRadarServer) JSON** — recognizes the `acList` wrapper and
+- **VRS (VirtualRadarServer) JSON**: recognizes the `acList` wrapper and
   maps mixed-case field names (`Icao`, `Lat`, `Long`, `Call`, `Alt`, `Spd`,
   `Trak`) into the muninn record schema. Common among hobbyist ADS-B
   feeders running the VRS Windows server.
-- **NDJSON / JSON-lines** — one JSON aircraft per line. Detected via the
+- **NDJSON / JSON-lines**: one JSON aircraft per line. Detected via the
   same fall-through that already existed; now documented and tested.
   Works with both dump1090 and VRS field names mixed in one stream.
-- **Gzipped JSON (`.json.gz` / `.gz`)** — tar1090 history chunks decode
+- **Gzipped JSON (`.json.gz` / `.gz`)**: tar1090 history chunks decode
   transparently. Detected by extension or by 1f 8b magic bytes, so a
   hand-gzipped capture also works. Same parser, no new flags.
 
@@ -1031,7 +1031,7 @@ If you installed v1.9.0 and were using Zigbee features:
 - `parse_json` docstring expanded to list every JSON dialect it accepts;
   `detect_format` now sniffs through gzip transparently.
 
-## [1.5.2] — 2026-05-15
+## [1.5.2] - 2026-05-15
 
 ### Added
 - **`--open`** opens the output folder in your OS file manager
@@ -1048,10 +1048,10 @@ If you installed v1.9.0 and were using Zigbee features:
 - Empty-input message now lists every supported file extension and points
   at `--reset` instead of telling users to delete a JSON file by hand.
 
-## [1.5.1] — 2026-05-15
+## [1.5.1] - 2026-05-15
 
 ### Added
-- **`-q` / `--quiet`** suppresses informational output — the format-detection
+- **`-q` / `--quiet`** suppresses informational output, the format-detection
   notice, decoded-count line, OK/wrote summary, dump1090 network warning, and
   range-sanity warning. Errors and key-rejection messages still print. Useful
   for cron jobs and scripted pipelines that just want the JSON file.
@@ -1059,13 +1059,13 @@ If you installed v1.9.0 and were using Zigbee features:
   API entirely. For offline boxes and anyone who'd rather not phone home at
   all. (The check is already cached for 24 h, but this lets you opt out.)
 
-## [1.5.0] — 2026-05-15
+## [1.5.0] - 2026-05-15
 
 ### Added
 - **Range sanity check:** after decoding any capture file, Muninn now warns
   if aircraft positions suggest a mix of locally received and remotely fed
   data. It computes the median geographic position of all aircraft (robust
-  against outliers) and flags any beyond 500 km — the approximate radio
+  against outliers) and flags any beyond 500 km, the approximate radio
   horizon for 1090 MHz at cruise altitude. No records are filtered; the
   warning is informational only.
 - **dump1090 network input check:** at startup, Muninn probes
@@ -1082,7 +1082,7 @@ If you installed v1.9.0 and were using Zigbee features:
   number of remote outliers cannot pull the centre point far enough to
   incorrectly flag the majority of local aircraft.
 
-## [1.4.1] — 2026-05-11
+## [1.4.1] - 2026-05-11
 
 ### Docs
 - README rewritten to walk through the actual first-run experience (folder
@@ -1094,7 +1094,7 @@ If you installed v1.9.0 and were using Zigbee features:
 - `input/README.md` and `output/README.md` clarified for users who picked
   the Desktop option (those files only describe the in-repo folders).
 
-## [1.4.0] — 2026-05-11
+## [1.4.0] - 2026-05-11
 
 ### Added
 - **Desktop install option:** picking "On Desktop" now creates a single
@@ -1104,10 +1104,10 @@ If you installed v1.9.0 and were using Zigbee features:
   Desktop option, Muninn offers to create `Muninn.lnk` on the Desktop.
   Double-click it and it opens a terminal, runs `muninn.py`, and pauses
   so you can read the output. Uses the raven icon (`assets/muninn.ico`).
-- `assets/muninn.ico` — multi-resolution Windows icon (16/24/32/48/64/128/256)
+- `assets/muninn.ico`: multi-resolution Windows icon (16/24/32/48/64/128/256)
   generated from `muninn.png`.
 
-## [1.3.0] — 2026-05-11
+## [1.3.0] - 2026-05-11
 
 ### Added
 - **First-run prompt asks where you want your input/output folders.** You can
@@ -1117,7 +1117,7 @@ If you installed v1.9.0 and were using Zigbee features:
 - Saved-folder config lives at `~/.config/muninn/folders.json`. Delete that
   file to re-prompt.
 
-## [1.2.0] — 2026-05-11
+## [1.2.0] - 2026-05-11
 
 ### Added
 - **`input/` and `output/` folders.** Drop capture files in `input/`, run
@@ -1127,24 +1127,24 @@ If you installed v1.9.0 and were using Zigbee features:
   scattering it next to each input file.
 - **Batch mode**: pointing the input at a directory (instead of a single
   file) processes every supported capture in one pass. Works with `--upload`
-  too — uploads happen once at the end with all aircraft.
+  too, uploads happen once at the end with all aircraft.
 
 ### Changed
 - Single-file conversion logic refactored into `_process_one_file()` so the
   batch + single + watch paths all share the same code. No behavior change
   for existing invocations.
 
-## [1.1.0] — 2026-05-11
+## [1.1.0] - 2026-05-11
 
 ### Added
 - `--version` flag prints the running Muninn version.
 - `--update` self-updates via `git pull` if you cloned the repo; otherwise
   prints the latest-release URL to download.
-- Background version check (cached daily) — prints a one-line notice when a
+- Background version check (cached daily), prints a one-line notice when a
   newer release is available. No telemetry, just a HEAD against the GitHub
   releases API.
 - Interactive `--setup` is now a yes/no opt-in (banner explains the key is
-  only needed if you actually want to upload — local conversion works
+  only needed if you actually want to upload, local conversion works
   without one).
 - Smarter Windows path handling: unquoted paths with spaces are auto-joined,
   and bad paths print a hint suggesting double quotes.
@@ -1153,7 +1153,7 @@ If you installed v1.9.0 and were using Zigbee features:
 ### Changed
 - **On-disk JSON now uses dump1090-fa / readsb shape** so the WDGoWars
   web upload form accepts the file directly. The `--upload` HMAC path
-  is unaffected — it still uses the original envelope against
+  is unaffected. It still uses the original envelope against
   `/api/upload/`.
 - Rebranded from `adsb-to-wdgwars` to **Muninn**. The repo URL stays at
   `github.com/HiroAlleyCat/adsb-to-wdgwars` for searchability; the script
@@ -1168,14 +1168,14 @@ If you installed v1.9.0 and were using Zigbee features:
   (TLS 1.2+, hostname verification, system trust store).
 - Full threat model: [SECURITY.md](SECURITY.md).
 
-## [1.0.0] — 2026-05-10
+## [1.0.0] - 2026-05-10
 
 Initial public release.
 
 ### Added
 - Five input format parsers, all auto-detected:
   - PortaPack Mayhem `ADSB.TXT` (HackRF H4M)
-  - AVR raw Mode-S (dump1090 `--raw`, readsb port 30002) — uses pyModeS
+  - AVR raw Mode-S (dump1090 `--raw`, readsb port 30002). Uses pyModeS
   - SBS-1 / BaseStation CSV (port 30003)
   - dump1090 `aircraft.json` snapshot
   - Generic CSV with `--csv-format` column hints

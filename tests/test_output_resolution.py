@@ -1,7 +1,7 @@
 """Output-path resolution + graceful local-write failure tests.
 
 Added v2.1.2 after a live bug report: `./run.sh /run/readsb/aircraft.json
---upload` — the README's own documented one-shot example — crashed with an
+--upload`, the README's own documented one-shot example, crashed with an
 unhandled `PermissionError` writing the local `.wdgwars.json` artifact,
 because `/run/readsb` is a root-owned runtime dir the feeder account can't
 write to. Three things were wrong, and this file covers all three:
@@ -11,7 +11,7 @@ write to. Three things were wrong, and this file covers all three:
    beside the input file. Fixed resolution order:
    `--out` > `--out-dir` > configured output folder > beside the input.
 2. A failed local write took the whole run down, including an in-flight
-   `--upload` — even though the local JSON is only a side artifact and the
+   `--upload`. Even though the local JSON is only a side artifact and the
    upload is the actual point of running with `--upload`.
 3. The failure surfaced as a raw traceback instead of a plain-language
    message naming the path and suggesting `--out-dir`.

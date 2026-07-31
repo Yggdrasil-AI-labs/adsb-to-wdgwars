@@ -57,7 +57,7 @@ class IngestSbs1RowTests(unittest.TestCase):
         rows: dict = {}
         muninn._ingest_sbs1_row(next(muninn.csv.reader([MSG3])), rows)
         muninn._ingest_sbs1_row(next(muninn.csv.reader([MSG4])), rows)
-        # velocity row (MSG4) has no lat/lon columns populated — position
+        # velocity row (MSG4) has no lat/lon columns populated, position
         # from the earlier MSG3 row must survive, not get reset to None.
         self.assertEqual(rows["A8A5DD"]["lat"], 42.123)
         self.assertEqual(rows["A8A5DD"]["speed_kt"], 420)
@@ -151,7 +151,7 @@ class ReadSocketLinesTests(unittest.TestCase):
         """A peer sending a giant blob with no newline (garbage feed, or a
         malicious host given how --stream takes an arbitrary user-supplied
         address) must not grow the buffer without bound, and the oversized
-        segment must never be handed to the caller — even if a newline
+        segment must never be handed to the caller, even if a newline
         eventually shows up glued directly onto the end of it (no separate
         newline of its own), which is exactly the case that a naive
         check-after-extraction implementation gets wrong."""
@@ -189,7 +189,7 @@ class ReadSocketLinesTests(unittest.TestCase):
     def test_idle_gap_discards_leftover_sub_cap_fragment(self):
         """A newline-less fragment that's UNDER _STREAM_MAX_LINE_BYTES (so
         the size-cap branch never fires) must still be discarded once an
-        idle gap passes — otherwise it sits in the buffer indefinitely and
+        idle gap passes, otherwise it sits in the buffer indefinitely and
         gets glued onto whichever real line shows up next, no matter how
         much later that is. This is the exact bug a flaky run of
         test_recovers_cleanly_once_oversized_junk_stops caught: a leftover
@@ -199,7 +199,7 @@ class ReadSocketLinesTests(unittest.TestCase):
         try:
             gen = muninn._read_socket_lines(b, idle_timeout=0.2)
             a.sendall(b"xxxxx")  # well under the cap, no newline
-            self.assertIsNone(next(gen))  # idle gap — fragment must be dropped here
+            self.assertIsNone(next(gen))  # idle gap. Fragment must be dropped here
             a.sendall(b"MSG,1,1,1,CCCCCC,1,x,y\n")
             self.assertEqual(next(gen), "MSG,1,1,1,CCCCCC,1,x,y")
         finally:
@@ -207,7 +207,7 @@ class ReadSocketLinesTests(unittest.TestCase):
             b.close()
 
     def test_strips_trailing_cr_for_crlf_feeds(self):
-        """Some dump1090/readsb builds emit CRLF line endings (confirmed —
+        """Some dump1090/readsb builds emit CRLF line endings (confirmed,
         see the real capture in examples/sbs1_real.txt). A trailing \\r
         must not leak into the yielded line and corrupt whichever CSV
         column happens to be last."""
@@ -227,7 +227,7 @@ class RealCaptureParityTests(unittest.TestCase):
     deliberately don't align to line boundaries, and checks the result
     matches parse_sbs1() (the file-based parser) byte for byte. This is
     the real regression check that the streaming path and the file path
-    never drift apart on real-world data — including its CRLF endings,
+    never drift apart on real-world data. Including its CRLF endings,
     which is what first exposed the CR-stripping bug above."""
 
     @unittest.skipUnless(REAL_SBS1_CAPTURE.exists(), "real capture fixture missing")
@@ -266,7 +266,7 @@ class RealCaptureParityTests(unittest.TestCase):
 
         from_file = muninn.parse_sbs1(REAL_SBS1_CAPTURE)
 
-        self.assertTrue(from_file, "fixture parser returned nothing — fixture missing data?")
+        self.assertTrue(from_file, "fixture parser returned nothing, fixture missing data?")
         self.assertEqual(set(streamed.keys()), set(from_file.keys()))
         for icao in from_file:
             self.assertEqual(streamed[icao], from_file[icao], f"mismatch for {icao}")
@@ -279,7 +279,7 @@ def _free_port() -> int:
 
 
 class StreamTcpApiKeyTests(unittest.TestCase):
-    """The API-key resolution at the top of stream_tcp — runs before any
+    """The API-key resolution at the top of stream_tcp. Runs before any
     socket is touched, so it's cheap to exercise directly."""
 
     def test_no_upload_flag_skips_key_resolution_entirely(self):
@@ -303,7 +303,7 @@ class StreamTcpApiKeyTests(unittest.TestCase):
 
     def test_upload_with_no_key_after_successful_setup_still_exits(self):
         # interactive_setup "succeeds" (rc=0) but the key still can't be
-        # loaded afterward (e.g. the user backed out of the key prompt) —
+        # loaded afterward (e.g. the user backed out of the key prompt),
         # stream_tcp must refuse to run uploads with no key at all.
         args = _fake_stream_args(upload=True, key=None, stream_interval=5)
         with mock.patch.object(muninn, "load_key", return_value=None), \
@@ -316,7 +316,7 @@ class StreamTcpEndToEndTests(unittest.TestCase):
     """Runs the real connect -> ingest -> flush -> reconnect path against
     an actual local TCP server, rather than only its extracted helpers.
     stream_tcp's outer loop runs until Ctrl+C by design, so there's no
-    natural stopping point for a test — the standard trick is to make the
+    natural stopping point for a test. The standard trick is to make the
     reconnect-wait itself raise, which is exactly the same KeyboardInterrupt
     a real Ctrl+C would deliver, just delivered deterministically instead
     of relying on wall-clock timing."""
@@ -335,7 +335,7 @@ class StreamTcpEndToEndTests(unittest.TestCase):
             listening.set()  # only now is the client's connect() guaranteed to land
             conn, _ = srv.accept()
             conn.sendall(msg.encode())
-            # Event.wait(), not time.sleep() — this thread's timing must
+            # Event.wait(), not time.sleep(). This thread's timing must
             # not be affected by the time.sleep mock scoped to the main
             # thread below. Gives a --stream-interval flush time to fire
             # (via an idle-timeout tick) before the connection closes.
@@ -347,7 +347,7 @@ class StreamTcpEndToEndTests(unittest.TestCase):
         t.start()
         # Without this, the client's first socket.create_connection() can
         # race the server thread's bind()/listen() on a loaded/slow CI
-        # runner and get ECONNREFUSED before anything is ever listening —
+        # runner and get ECONNREFUSED before anything is ever listening,
         # which fed straight into the mocked-sleep KeyboardInterrupt exit
         # with zero uploads (the exact flake this fixes).
         self.assertTrue(listening.wait(5), "server never reached listen()")

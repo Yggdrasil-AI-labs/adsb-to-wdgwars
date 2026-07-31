@@ -10,7 +10,7 @@
 #   4. muninn.py --version + --help sanity.
 #
 # Live `--schedule` install against the real systemd user manager is
-# NOT part of this script — it requires a clean host without a real
+# NOT part of this script - it requires a clean host without a real
 # WDGWars key, and a side-effecting systemctl --user environment.
 # That belongs in a pre-release manual checklist, not a script anyone
 # can run.
@@ -91,11 +91,11 @@ ok "--version + --help"
 # long. CI runs Linux, so we focus there. Aligned with wigle's gate.
 if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1 \
         && [ -d /run/systemd/system ]; then
-    say "rendering systemd unit (no install) — XDG-isolated..."
+    say "rendering systemd unit (no install). XDG-isolated..."
     export XDG_CONFIG_HOME="$TMP_DIR/xdg"
     mkdir -p "$XDG_CONFIG_HOME"
     mkdir -p "$TMP_DIR/captures"
-    # Run muninn's headless --schedule but suppress systemctl errors —
+    # Run muninn's headless --schedule but suppress systemctl errors,
     # the unit file write happens BEFORE the systemctl call, so we get
     # the artifact even when systemctl can't find our XDG path.
     "$VENV_PY" muninn.py --schedule --schedule-mode watch \
@@ -114,7 +114,7 @@ if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1 \
         || fail "marker comment missing from unit"
     ok "unit content correct (dry-run + marker + flags)"
 else
-    say "(skipping systemd unit smoke — not on a systemd Linux host)"
+    say "(skipping systemd unit smoke, not on a systemd Linux host)"
 fi
 
 say "all smoke checks passed"

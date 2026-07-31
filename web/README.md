@@ -1,4 +1,4 @@
-# Muninn — web frontend
+# Muninn - web frontend
 
 A static, single-page version of Muninn that runs entirely in the browser.
 The Python parsers from `../muninn.py` execute client-side via
@@ -6,18 +6,18 @@ The Python parsers from `../muninn.py` execute client-side via
 user's machine until they click **Upload**.
 
 **Headless / CLI users:** ignore this directory. You don't need it. The
-CLI in the repo root (`muninn.py`) is completely independent — no shared
+CLI in the repo root (`muninn.py`) is completely independent, no shared
 runtime, no shared deps, no display required.
 
 ## What's here
 
-- `index.html` — the page itself
-- `app.js` — drop-zone wiring + Pyodide bootstrap + HMAC upload
-- `muninn.py` — build-time copy of the root `muninn.py` (the parsers run as-is)
+- `index.html`: the page itself
+- `app.js`: drop-zone wiring + Pyodide bootstrap + HMAC upload
+- `muninn.py`: build-time copy of the root `muninn.py` (the parsers run as-is)
 
-## Local preview (read-only — parse / download only)
+## Local preview (read-only - parse / download only)
 
-Pyodide and ES modules require an HTTP server — opening `index.html`
+Pyodide and ES modules require an HTTP server, opening `index.html`
 directly via `file://` will not work.
 
 ```bash
@@ -27,7 +27,7 @@ python3 -m http.server 8000
 ```
 
 `http.server` only serves static files, so the in-browser **Direct
-upload** button will still fail with CORS — the upload UI shows up
+upload** button will still fail with CORS, the upload UI shows up
 because the page is no longer on `*.github.io`, but the actual POST
 to `wdgwars.pl` is blocked. For local preview / debugging this is fine.
 
@@ -53,7 +53,7 @@ Open the page, then in **Settings → Endpoint** change the value from
 ```
 
 Now Direct upload routes through the local proxy and reaches WDG. Your
-API key never leaves your machine in the page — it travels to `serve.py`
+API key never leaves your machine in the page, it travels to `serve.py`
 over loopback and then to `wdgwars.pl` server-to-server.
 
 ## Public deploy: parse-only
@@ -82,5 +82,5 @@ Or (cleaner) wire this into a GitHub Action that copies on every release tag.
 ## Deployment
 
 This directory is designed to be served as static files. Any static host
-works — GitHub Pages, Netlify, Cloudflare Pages, an `nginx` block on
+works. GitHub Pages, Netlify, Cloudflare Pages, an `nginx` block on
 your own box. There is no server-side component.

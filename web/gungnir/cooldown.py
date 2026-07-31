@@ -1,7 +1,7 @@
 """Server-cooldown persistence.
 
 When wdgwars.pl returns a 429 (rate limit) with a `retry_after` field, the
-caller should not just sleep — it should persist the deadline so the next
+caller should not just sleep. It should persist the deadline so the next
 cron invocation also respects it. Otherwise a per-minute cron will hammer
 the server while a previous upload is still being queued/processed.
 

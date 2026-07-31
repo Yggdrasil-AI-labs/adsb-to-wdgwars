@@ -8,7 +8,7 @@ aircraft count so you can verify a parser change end-to-end.
 
 | File | Format | Aircraft (positions) | Notes |
 |---|---|---:|---|
-| `avr_sample.txt`        | AVR raw           |   0 | Smoke test — 2 frames, no valid CPR pair, parser-doesn't-crash check |
+| `avr_sample.txt`        | AVR raw           |   0 | Smoke test, 2 frames, no valid CPR pair, parser-doesn't-crash check |
 | `avr_real.txt`          | AVR raw           |   8 | Real HackRF capture |
 | `sbs1_sample.txt`       | SBS-1 (BaseStation) |  3 | Hand-crafted across 3 ICAOs |
 | `sbs1_real.txt`         | SBS-1             |  10 | Real port-30003 capture |
@@ -19,7 +19,7 @@ aircraft count so you can verify a parser change end-to-end.
 | `ndjson_sample.json`    | NDJSON / JSON-lines |  12 | One aircraft per line |
 | `tar1090_chunk_sample.json.gz` | gzipped tar1090 | 12 | Gzipped dump1090 snapshot |
 | `gdl90_synthetic.gdl90`        | GDL-90 binary     |   1 | Synthetic Traffic Report frame |
-| `gdl90_real.gdl90`             | GDL-90 binary     |   1 | Authoritative fixture from [NathanVaughn/gdl90py](https://github.com/NathanVaughn/gdl90py/blob/main/tests/messages/test_traffic_report.py) — ICAO `AB4549`, callsign `N825V`, 44.907°N, -122.995°W |
+| `gdl90_real.gdl90`             | GDL-90 binary     |   1 | Authoritative fixture from [NathanVaughn/gdl90py](https://github.com/NathanVaughn/gdl90py/blob/main/tests/messages/test_traffic_report.py). ICAO `AB4549`, callsign `N825V`, 44.907°N, -122.995°W |
 | `stratux_sample.json`          | Stratux `/traffic` | 12 | Derived from `dump1090_real.json` |
 | `beast_sample.beast`           | Mode-S Beast binary |  8 | Real AVR frames wrapped in Beast (matches `avr_real.txt` baseline) |
 
@@ -36,14 +36,14 @@ for f in examples/*.txt examples/*.json examples/*.json.gz; do
 done
 ```
 
-A failure on *any* line means a parser regression — flag before
+A failure on *any* line means a parser regression, flag before
 shipping.
 
 ## Cached output envelopes (`*.wdgwars.json`)
 
 Each input fixture below has a sibling `<stem>.wdgwars.json` checked into
 the repo: the exact dump1090-fa-shaped JSON envelope Muninn emits for that
-input. They exist for cross-implementation parity testing — if another
+input. They exist for cross-implementation parity testing, if another
 project re-implements one of these parsers in a different language, diff
 its output against the cached envelope to confirm byte-equivalent shape.
 
@@ -58,18 +58,18 @@ its output against the cached envelope to confirm byte-equivalent shape.
 | `ndjson_sample.wdgwars.json`    | `ndjson_sample.json` |
 | `tar1090_chunk_sample.wdgwars.json` | `tar1090_chunk_sample.json.gz` |
 
-To regenerate one, run `python3 muninn.py <input>` — the default output
+To regenerate one, run `python3 muninn.py <input>`, the default output
 path is `<stem>.wdgwars.json` next to the input. Note that the `now`
 field is the wall-clock time of the run, so regenerating produces a
 different `now` value; the aircraft list shape and counts are stable.
 
 ## Where the real captures came from
 
-- `avr_real.txt`, `sbs1_real.txt`, `dump1090_real.json` — captured on
+- `avr_real.txt`, `sbs1_real.txt`, `dump1090_real.json`, captured on
   a real receiver. Realistic mix of GA,
   commercial, and helicopter traffic, plus a handful of message types
   that exercise the edge cases (no position, missing altitude, etc.).
-- `mayhem_sample.txt` — PortaPack Mayhem firmware on an H4M, captured
+- `mayhem_sample.txt`: PortaPack Mayhem firmware on an H4M, captured
   from the same area.
 
 The four "real" files anchor the regression tests. The `*_sample.*`
@@ -86,7 +86,7 @@ from pathlib import Path
 src = json.loads(Path("dump1090_real.json").read_text())
 aircraft = src["aircraft"]
 
-# VRS — acList wrapper, mixed-case keys
+# VRS - acList wrapper, mixed-case keys
 Path("vrs_sample.json").write_text(json.dumps({
     "src": 3, "totalAc": len(aircraft),
     "acList": [
@@ -100,7 +100,7 @@ Path("vrs_sample.json").write_text(json.dumps({
     ],
 }, indent=2))
 
-# NDJSON — one record per line
+# NDJSON - one record per line
 with open("ndjson_sample.json", "w") as f:
     for a in aircraft:
         if a.get("lat") is not None:

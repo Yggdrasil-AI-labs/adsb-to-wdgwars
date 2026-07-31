@@ -10,7 +10,7 @@ The config dir is OS-appropriate and per-tool:
     Linux:    $XDG_CONFIG_HOME/<tool>/  (falls back to ~/.config/<tool>/)
     macOS:    ~/.config/<tool>/
 
-This file also exposes `scrub()` — a tiny helper that redacts the API key
+This file also exposes `scrub()`, a tiny helper that redacts the API key
 from any string before it gets logged. Defensive: if the server ever
 echoes the key in an error message, we don't want to spill it.
 
@@ -70,7 +70,7 @@ def save_key(tool: str, key: str) -> None:
       anyone who can plant a symlink in the config dir.
     - **Create with 0o600 atomically.** Open with ``O_WRONLY|O_CREAT|
       O_TRUNC`` and mode 0o600 *before* writing the secret, so the file
-      is never world-readable — not even for the microseconds between
+      is never world-readable, not even for the microseconds between
       ``write_text`` and a subsequent ``chmod``.
     - **Trailing newline.** POSIX convention; mirrors Muninn 1.x's file
       shape so existing keys round-trip identically.
@@ -101,7 +101,7 @@ def save_key(tool: str, key: str) -> None:
 
 class KeyFileSymlinkError(OSError):
     """Raised by :func:`save_key` if the target key file is a symlink.
-    Surfaces what Muninn 1.x previously called ``sys.exit`` with — now
+    Surfaces what Muninn 1.x previously called ``sys.exit`` with, now
     callers can catch and decide how to surface it (CLI exit, log, etc.)."""
 
 
@@ -110,7 +110,7 @@ def scrub(text: str, key: str) -> str:
 
     Redacts on any non-empty key that appears in the text. The redaction
     shape is "<first-4>…<last-4>" for keys longer than 8 chars, otherwise
-    the literal string "…" — short keys can't be partially revealed
+    the literal string "…". Short keys can't be partially revealed
     without exposing most of the secret.
 
     No-op if key is empty or not present in the text (cheap to call

@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <script>
   // Tag the document BEFORE CSS parses so the public-deploy hide rules apply
-  // on the very first paint — no flash of upload UI on github.io. Using
+  // on the very first paint, no flash of upload UI on github.io. Using
   // documentElement here because <body> doesn't exist yet at <head> parse.
   if (/\.github\.io$/i.test(location.hostname)) {
     document.documentElement.classList.add("public-deploy");
@@ -401,7 +401,7 @@
   }
 
   /* On the public GitHub Pages deploy, hide everything related to direct
-     uploads. The site becomes pure parser/converter — drop, preview,
+     uploads. The site becomes pure parser/converter. Drop, preview,
      download. Upload remains available for CLI users and self-hosters
      (where serve.py provides a same-origin proxy). */
   html.public-deploy #upload,
@@ -411,7 +411,7 @@
   html.public-deploy .settings-panel,
   html.public-deploy .self-hosted-only { display: none !important; }
   /* Inverse: the "for power users / CLI / self-hosted" hint only shows on the
-     public site. Locally it's redundant — those users already have the
+     public site. Locally it's redundant. Those users already have the
      upload UI right there. */
   html:not(.public-deploy) .public-only { display: none !important; }
 
@@ -498,7 +498,7 @@
       </label>
     </div>
     <div class="hint" id="player-hint">
-      <strong style="color:var(--cyan)">Next step:</strong> click <em>Download JSON</em>, then drag the file into the upload form on <a href="https://wdgwars.pl" target="_blank" rel="noopener">wdgwars.pl</a>. <span class="self-hosted-only">Direct API upload is also available — click <em>Direct upload (API)</em> with your key set in the panel below.</span><span class="public-only">Power users: the <a href="https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars" target="_blank" rel="noopener">CLI</a> can upload directly via HMAC, and a self-hosted Muninn (with the included <code>serve.py</code> proxy) gets browser-side direct upload too.</span>
+      <strong style="color:var(--cyan)">Next step:</strong> click <em>Download JSON</em>, then drag the file into the upload form on <a href="https://wdgwars.pl" target="_blank" rel="noopener">wdgwars.pl</a>. <span class="self-hosted-only">Direct API upload is also available, click <em>Direct upload (API)</em> with your key set in the panel below.</span><span class="public-only">Power users: the <a href="https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars" target="_blank" rel="noopener">CLI</a> can upload directly via HMAC, and a self-hosted Muninn (with the included <code>serve.py</code> proxy) gets browser-side direct upload too.</span>
     </div>
     <div class="status" id="upload-status" style="margin-top:12px"></div>
     <pre id="dry-output" class="dry-output"></pre>
@@ -507,7 +507,7 @@
   <details class="panel settings-panel">
     <summary>uplink config</summary>
     <label>WDGWars API key
-      <input type="password" id="apikey" placeholder="paste key — stored only in this browser">
+      <input type="password" id="apikey" placeholder="paste key, stored only in this browser">
     </label>
     <label>Endpoint
       <input type="text" id="apiurl" value="https://wdgwars.pl/api/upload/">

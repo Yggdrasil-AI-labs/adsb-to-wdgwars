@@ -59,7 +59,7 @@ class PreviewFlagTests(unittest.TestCase):
             rc, records = muninn._process_one_file(path, args)
             self.assertEqual(rc, 0)
             self.assertEqual(len(records), 8,
-                             "preview shouldn't drop records — just limit "
+                             "preview shouldn't drop records, just limit "
                              "what's printed")
         finally:
             path.unlink()
@@ -75,7 +75,7 @@ class PreviewFlagTests(unittest.TestCase):
             with redirect_stdout(io.StringIO()):
                 muninn._process_one_file(path, args)
             self.assertFalse(sibling.exists(),
-                             f"preview wrote {sibling} — should be no-op")
+                             f"preview wrote {sibling}. Should be no-op")
         finally:
             path.unlink()
 
@@ -111,7 +111,7 @@ class PreviewFlagTests(unittest.TestCase):
             path.unlink()
 
     def test_preview_with_fewer_than_6_records(self):
-        # 2-aircraft fixture — preview should print just 2, not pad
+        # 2-aircraft fixture. Preview should print just 2, not pad
         f = tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", delete=False, encoding="utf-8")
         f.write(

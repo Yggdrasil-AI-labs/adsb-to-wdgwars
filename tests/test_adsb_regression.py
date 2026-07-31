@@ -108,7 +108,7 @@ class AdsbRegressionTests(unittest.TestCase):
         Go generic-CSV dump had three rows for the same ICAO, and the row
         order wasn't chronological (an earlier-timestamped row landed later
         in the file). The old parse_csv did a blind `rows[icao] = rec` per
-        row, so whichever row was iterated last won outright — in the real
+        row, so whichever row was iterated last won outright, in the real
         sample that was a degraded observation with speed_kt=0/heading=0,
         silently discarding the good velocity data from an earlier row.
         Fixed to merge like parse_avr/parse_sbs1 already do: only overwrite

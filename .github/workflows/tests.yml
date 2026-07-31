@@ -39,7 +39,7 @@ jobs:
         run: python scripts/check_readme_examples.py README.md
 
       - name: Smoke (full pre-release sanity)
-        # Only on Python 3.12 — running it on every matrix entry would
+        # Only on Python 3.12, running it on every matrix entry would
         # triple CI time for no extra signal (the smoke script itself
         # doesn't care which interpreter, it spawns its own venv).
         if: matrix.python-version == '3.12'

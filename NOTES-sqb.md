@@ -10,7 +10,7 @@ CLI additions (`--format sqb`, `--sqb-tz ZONE`), a regenerable synthetic
 fixture at `tests/fixtures/sample.sqb` (built by
 `tests/fixtures/build_sample_sqb.py`), 13 unit tests in
 `tests/test_sqb_input.py`, and a new row in the README's supported-format
-table. Stdlib only — `sqlite3` and `zoneinfo` are both built into Python
+table. Stdlib only. `sqlite3` and `zoneinfo` are both built into Python
 3.9+.
 
 ## Assumptions baked in
@@ -21,7 +21,7 @@ table. Stdlib only — `sqlite3` and `zoneinfo` are both built into Python
    `--sqb-tz America/New_York` (or any IANA zone) opts into local-time
    interpretation. On Windows installs the IANA zone database is supplied
    by the `tzdata` PyPI package, so users will need `pip install tzdata`
-   if `--sqb-tz` reports an unknown zone — that's documented in the
+   if `--sqb-tz` reports an unknown zone, that's documented in the
    README.
 2. **Fractional seconds are dropped.** Muninn's `first_seen` is
    whole-second resolution everywhere else, so `.123` is truncated rather
@@ -30,7 +30,7 @@ table. Stdlib only — `sqlite3` and `zoneinfo` are both built into Python
    per flight (not per position report) with `First*` / `Last*` lat/lon/
    altitude columns. We emit one record per endpoint where the
    coordinates are valid. Both endpoints survive into the upload payload
-   even though they share an ICAO — the dict is keyed internally by
+   even though they share an ICAO. The dict is keyed internally by
    `f"{icao}-{flight_idx}-first|last"` and only `.values()` is consumed
    downstream, which matches how `_to_dump1090_fa()` treats each entry as
    an independent observation.
@@ -50,12 +50,12 @@ table. Stdlib only — `sqlite3` and `zoneinfo` are both built into Python
 7. **Empty / missing Flights exits nonzero.** If the `Flights` table is
    absent or empty (some installs never enable the logger), muninn
    `sys.exit`s with a clear message rather than write an empty upload
-   JSON — same convention as other parsers.
+   JSON, same convention as other parsers.
 
 ## Quirks worth flagging if asked
 
 - If the Windows user paste-uploads their `.sqb` directly into the web
-  drag-and-drop UI, that won't work — the web flavour (Pyodide) doesn't
+  drag-and-drop UI, that won't work, the web flavour (Pyodide) doesn't
   ship the parser. They need the CLI for `.sqb`.
 - The default UTC-timestamps assumption is the right call when uploading
   to WDGWars (the portal expects UTC), but the `first_seen` field will
@@ -68,7 +68,7 @@ table. Stdlib only — `sqlite3` and `zoneinfo` are both built into Python
   is kept once with its most recent position" line in `muninn.py`'s
   module docstring is now strictly inaccurate for `.sqb` inputs. I left
   the docstring alone because changing it for one format would
-  understate the cross-format behaviour — happy to revise if you'd
+  understate the cross-format behaviour, happy to revise if you'd
   prefer.
 
 ## How to verify locally

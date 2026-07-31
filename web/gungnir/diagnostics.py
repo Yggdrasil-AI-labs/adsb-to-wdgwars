@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 
 # Every counter the server has ever been observed to return. New counters
-# can be added here without code changes elsewhere — the check is "did
+# can be added here without code changes elsewhere - the check is "did
 # ANY counter come back non-zero", so unknown new counters are forward-
 # compatible.
 KNOWN_COUNTERS = (
@@ -42,7 +42,7 @@ class SilentDrop:
         response: the parsed JSON response from the server (or raw dict)
         raw_text_excerpt: the raw response body, truncated to the limit
             passed to `check_silent_drop()` (typically 800 chars). The
-            "excerpt" suffix is load-bearing — do not use this field as
+            "excerpt" suffix is load-bearing. Do not use this field as
             if it were the full body.
     """
     sent_count: int
@@ -66,7 +66,7 @@ def check_silent_drop(
 
     The ``raw_text_excerpt`` parameter is the caller's already-truncated
     snippet of the response body; gungnir does not truncate further. The
-    name is load-bearing — keep it explicit at the call site.
+    name is load-bearing. Keep it explicit at the call site.
     """
     if status != 200:
         return None

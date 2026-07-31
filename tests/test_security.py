@@ -26,7 +26,7 @@ SCRIPT = Path("/opt/adsb-to-wdgwars/muninn.py")
 
 
 class GlobValidationTests(unittest.TestCase):
-    """_validate_glob — applied wherever a pattern is baked into a persisted
+    """_validate_glob. Applied wherever a pattern is baked into a persisted
     scheduler command (S6350)."""
 
     def test_accepts_real_decoder_globs(self):
@@ -90,7 +90,7 @@ class UserPathTests(unittest.TestCase):
 
 
 class StatePathConfinementTests(unittest.TestCase):
-    """_state_path_for — the watch-mode S2083 BLOCKER. The state file must
+    """_state_path_for, the watch-mode S2083 BLOCKER. The state file must
     stay inside the watched directory."""
 
     def test_state_file_is_inside_watched_dir(self):
@@ -120,7 +120,7 @@ class StatePathConfinementTests(unittest.TestCase):
 
 
 class SqliteUriTests(unittest.TestCase):
-    """_sqlite_ro_uri — a filename can't override the read-only mode (S8706)."""
+    """_sqlite_ro_uri, a filename can't override the read-only mode (S8706)."""
 
     def test_appends_read_only_mode(self):
         uri = muninn._sqlite_ro_uri(Path("BaseStation.sqb"))
@@ -129,9 +129,9 @@ class SqliteUriTests(unittest.TestCase):
 
     def test_question_mark_in_name_is_encoded(self):
         # `x?mode=rwc.sqb` must NOT yield a second, attacker-chosen query
-        # parameter — the only ?<query> in the URI is our trailing mode=ro.
+        # parameter, the only ?<query> in the URI is our trailing mode=ro.
         uri = muninn._sqlite_ro_uri(Path("x?mode=rwc.sqb"))
-        # Exactly one literal '?' — ours — so the only query param is mode=ro.
+        # Exactly one literal '?', ours. So the only query param is mode=ro.
         self.assertEqual(uri.count("?"), 1)
         self.assertTrue(uri.endswith("?mode=ro"))
         self.assertIn("%3F", uri)  # the filename's literal ? got encoded
@@ -144,7 +144,7 @@ class SqliteUriTests(unittest.TestCase):
 
 
 class CronQuotingTests(unittest.TestCase):
-    """render_cron_line — cron pipes each line through /bin/sh (S6350)."""
+    """render_cron_line, cron pipes each line through /bin/sh (S6350)."""
 
     def test_metacharacter_dir_is_quoted(self):
         import shlex
@@ -170,7 +170,7 @@ class CronQuotingTests(unittest.TestCase):
 
 
 class SystemdQuotingTests(unittest.TestCase):
-    """render_systemd_units — ExecStart word-splits and honours % (S6350)."""
+    """render_systemd_units. ExecStart word-splits and honours % (S6350)."""
 
     def test_dir_with_space_is_single_quoted_arg(self):
         units = muninn.render_systemd_units(
@@ -184,7 +184,7 @@ class SystemdQuotingTests(unittest.TestCase):
                 'watch', Path('/srv/a"b'), "aircraft.json", 5, PY, SCRIPT)
 
     def test_percent_in_dir_is_rejected(self):
-        # % is a systemd specifier — must not reach a rendered unit unguarded.
+        # % is a systemd specifier. Must not reach a rendered unit unguarded.
         with self.assertRaises(muninn._UnsafeInput):
             muninn.render_systemd_units(
                 "watch", Path("/srv/a%b"), "aircraft.json", 5, PY, SCRIPT)
@@ -197,7 +197,7 @@ class SystemdQuotingTests(unittest.TestCase):
 
 
 class SchtasksQuotingTests(unittest.TestCase):
-    """render_schtasks_create — action string re-parsed by Task Scheduler."""
+    """render_schtasks_create, action string re-parsed by Task Scheduler."""
 
     PYW = r"C:\Python311\python.exe"
     SCRIPTW = Path(r"C:\Tools\adsb-to-wdgwars\muninn.py")

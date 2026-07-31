@@ -8,7 +8,7 @@ Ubuntu 24.04 / Windows / macOS.
 
 LingerTests below is the exception: it covers the v2.1.1 systemd-lingering
 check/enable step with `subprocess.run`, `shutil.which`, and `getpass.getuser`
-all mocked — real `loginctl` is never invoked by this suite either.
+all mocked. Real `loginctl` is never invoked by this suite either.
 
 Run: python -m unittest tests/test_scheduler.py
 """
@@ -46,7 +46,7 @@ class SystemdRendererTests(unittest.TestCase):
     def test_watch_service_uses_watch_flags(self):
         units = muninn.render_systemd_units(
             "watch", INPUT, GLOB, 5, PY, SCRIPT)
-        # Path slash style follows the test runner's platform — assert on
+        # Path slash style follows the test runner's platform, assert on
         # the platform-agnostic substrings instead of a hardcoded form.
         self.assertIn("--watch ", units["service"])
         self.assertIn(INPUT.name, units["service"])
@@ -81,7 +81,7 @@ class SystemdRendererTests(unittest.TestCase):
 
     def test_watch_service_does_not_use_no_save(self):
         # Watch mode manages files in a user-writable dir, so the audit
-        # JSON write is fine — --no-save must not leak into watch.
+        # JSON write is fine. --no-save must not leak into watch.
         units = muninn.render_systemd_units(
             "watch", INPUT, GLOB, 5, PY, SCRIPT)
         self.assertNotIn("--no-save", units["service"])
@@ -143,7 +143,7 @@ class CronRendererTests(unittest.TestCase):
         self.assertIn(muninn.SCHEDULE_MARKER, line)
 
     def test_includes_no_save(self):
-        # cron is periodic-only against runtime dirs — must skip the local
+        # cron is periodic-only against runtime dirs. Must skip the local
         # write so an unwritable /run/<decoder> dir doesn't fail every tick.
         line = muninn.render_cron_line(INPUT, 5, PY, SCRIPT)
         self.assertIn("--no-save", line)
@@ -205,7 +205,7 @@ class SchtasksRendererTests(unittest.TestCase):
 
     def test_force_flag_for_idempotent_overwrite(self):
         # /F lets schtasks /Create replace an existing task without
-        # prompting — required for idempotency on re-run.
+        # prompting, required for idempotency on re-run.
         cmd = muninn.render_schtasks_create(
             "periodic", self.INPUTW, self.GLOBW, 5, self.PYW, self.SCRIPTW)
         self.assertIn("/F", cmd)
@@ -239,7 +239,7 @@ class DryRunRendererTests(unittest.TestCase):
         units = muninn.render_systemd_units(
             "periodic", INPUT, GLOB, 5, PY, SCRIPT, dry_run=True)
         self.assertIn("--dry-run", units["service"])
-        # Timer doesn't carry the dry-run flag — only the service does
+        # Timer doesn't carry the dry-run flag. Only the service does
         self.assertNotIn("--dry-run", units["timer"])
 
     def test_systemd_default_no_dry_run(self):
@@ -301,7 +301,7 @@ def _cp(stdout: str = "", stderr: str = "", returncode: int = 0):
 class LingerTests(unittest.TestCase):
     """v2.1.1: `--schedule`'s systemd branch checks/enables lingering so
     the installed unit survives logout/reboot. Every scenario mocks
-    subprocess.run / shutil.which — no real loginctl call is made."""
+    subprocess.run / shutil.which. No real loginctl call is made."""
 
     def setUp(self):
         self._getuser = mock.patch.object(
@@ -353,7 +353,7 @@ class LingerTests(unittest.TestCase):
     def test_enable_exit_code_zero_is_not_trusted_without_reverify(self):
         # The critical correctness case: enable-linger EXITS 0 but the
         # property still reads "no" on re-check. Must warn, not report
-        # success — a bare exit-code check would get this wrong.
+        # success. A bare exit-code check would get this wrong.
         responses = [_cp("Linger=no\n"),
                     _cp(returncode=0),          # looks like success...
                     _cp("Linger=no\n")]         # ...but didn't actually take
@@ -390,7 +390,7 @@ class LingerTests(unittest.TestCase):
 
     def test_ambiguous_current_state_warns_rather_than_guessing(self):
         # loginctl present and exits 0, but output doesn't parse as
-        # Linger=yes/no — must not assume either way.
+        # Linger=yes/no. Must not assume either way.
         with mock.patch.object(muninn.shutil, "which", return_value="/usr/bin/loginctl"), \
              mock.patch.object(muninn.subprocess, "run",
                                return_value=_cp("unexpected garbage\n")), \

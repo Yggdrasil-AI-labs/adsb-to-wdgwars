@@ -1,4 +1,4 @@
-// Muninn — web frontend. Loads Pyodide, runs the muninn.py parsers
+// Muninn. Web frontend. Loads Pyodide, runs the muninn.py parsers
 // client-side against a dropped file, then offers download or upload.
 
 const $ = (id) => document.getElementById(id);
@@ -17,7 +17,7 @@ const dryOutputEl = $("dry-output");
 // Public GitHub Pages deploys can't direct-upload (CORS), so the upload UI
 // (button, dry-run toggle, uplink config, player hint) is hidden when we're
 // on *.github.io. Everywhere else (localhost, self-hosted, custom domain)
-// the upload path is available — the self-hosted serve.py proxies it via
+// the upload path is available, the self-hosted serve.py proxies it via
 // same-origin so CORS doesn't apply.
 // The class is already on <html> from the inline head script (so first paint
 // doesn't flash the upload UI). Keep this in sync for any code path that
@@ -29,7 +29,7 @@ const versionPill = $("version-pill");
 
 // Restore stored API key / URL.
 apikeyEl.value = localStorage.getItem("muninn.apikey") || "";
-// Default to /endpoint/upload/ — server-side alias of /api/upload/ that
+// Default to /endpoint/upload/, server-side alias of /api/upload/ that
 // bypasses Cloudflare's per-IP L7 DDoS rate-limit. Same router, same HMAC
 // envelope, same response. Either path works; this default removes a
 // stumble for users hitting CF at batch scale. See muninn.py docstring.
@@ -58,7 +58,7 @@ async function bootPyodide() {
   });
 
   // Pyodide unvendors several stdlib modules into separately-loadable
-  // packages — they have to be requested up-front before any muninn.py
+  // packages. They have to be requested up-front before any muninn.py
   // import can succeed:
   //   - ssl: muninn.py imports it for the CLI's urllib uploads. The web
   //     frontend uses fetch() directly so the ssl code path is dead, but
@@ -162,7 +162,7 @@ elif fmt == "beast":
 elif fmt == "csv":
     rows = muninn.parse_csv(p, fmt=None)
 elif fmt == "sqb":
-    # BaseStation timestamps are naive; treat as UTC by default — the
+    # BaseStation timestamps are naive; treat as UTC by default, the
     # web UI doesn't surface --sqb-tz. Self-hosters who need a local-
     # time interpretation should use the CLI.
     rows = muninn.parse_sqb(p)
@@ -173,7 +173,7 @@ else:
 
 records = list(rows.values())
 
-# Range sanity check — replicate _warn_range's logic, return data for UI.
+# Range sanity check - replicate _warn_range's logic, return data for UI.
 warning = None
 if len(records) >= 2:
     lats = sorted(r["lat"] for r in records)
@@ -186,7 +186,7 @@ if len(records) >= 2:
         warning = (
             f"{len(outliers)} of {len(records)} aircraft "
             f"({100*len(outliers)/len(records):.0f}%) are >{muninn._ADSB_MAX_REALISTIC_KM} km "
-            f"from the position centroid — possible mixed local + remote feed."
+            f"from the position centroid, possible mixed local + remote feed."
         )
 
 json.dumps({"format": fmt, "records": records, "warning": warning})
@@ -201,9 +201,9 @@ json.dumps({"format": fmt, "records": records, "warning": warning})
     const last = lines[lines.length - 1] || raw;
     let friendly = `Couldn't parse ${file.name}. `;
     if (/UnicodeDecodeError|codec can't decode|invalid start byte/i.test(raw)) {
-      friendly += "Looks like a binary file — Muninn needs a text capture (.txt / .csv / .json / .log) or a .gz of one.";
+      friendly += "Looks like a binary file. Muninn needs a text capture (.txt / .csv / .json / .log) or a .gz of one.";
     } else if (/Could not detect CSV columns|First row:/i.test(raw)) {
-      // CSV parser sys.exit() — file was treated as CSV (didn't match any
+      // CSV parser sys.exit(). File was treated as CSV (didn't match any
       // other known format) and the columns weren't recognisable. Almost
       // always means the user dropped something that isn't ADS-B at all.
       friendly += "This doesn't look like a recognised ADS-B capture. Supported: AVR (.txt), SBS-1 (.txt), dump1090 / readsb / VRS / tar1090 JSON, NDJSON, gzipped JSON, PortaPack Mayhem (.txt), RTL1090 BaseStation (.sqb).";
@@ -321,7 +321,7 @@ uploadBtn.addEventListener("click", async () => {
       // Let Pyodide build the envelope using the same Python code path as
       // muninn.py upload(). This guarantees byte-for-byte signature match
       // even with non-ASCII callsigns (Python's json.dumps escapes them via
-      // ensure_ascii=True, JSON.stringify does not — divergent bytes would
+      // ensure_ascii=True, JSON.stringify does not. Divergent bytes would
       // break HMAC). One Python call per chunk; negligible cost.
       pyodide.globals.set("_chunk_records", chunk);
       pyodide.globals.set("_api_key", key);
@@ -336,7 +336,7 @@ json.dumps({"data": _data_b64, "nonce": _nonce, "sig": _sig})
 `);
 
       if (dryRun) {
-        // Show the exact request that *would* have gone out — verify HMAC,
+        // Show the exact request that *would* have gone out, verify HMAC,
         // headers, and envelope structure without touching the server.
         const env = JSON.parse(envelope);
         const keyMask = key.length > 8
@@ -381,13 +381,13 @@ json.dumps({"data": _data_b64, "nonce": _nonce, "sig": _sig})
       dryOutputEl.textContent = dryLog;
       dryOutputEl.classList.add("show");
       setUploadStatus(
-        `[DRY] Built ${chunks} chunk(s) — ${records.length} aircraft. ` +
+        `[DRY] Built ${chunks} chunk(s), ${records.length} aircraft. ` +
         `Nothing sent. Inspect the request below.`,
         "warn",
       );
     } else {
       setUploadStatus(
-        `Done — ${records.length} aircraft sent, ${totalImported} imported, ${totalSeen} already-seen.`,
+        `Done, ${records.length} aircraft sent, ${totalImported} imported, ${totalSeen} already-seen.`,
         "ok",
       );
     }

@@ -53,17 +53,17 @@ class SqbInputTests(unittest.TestCase):
         for r in records:
             by_icao.setdefault(r["icao"], []).append(r)
 
-        # A11111 had StartTime/First* AND EndTime/Last* — two records.
+        # A11111 had StartTime/First* AND EndTime/Last*, two records.
         self.assertEqual(len(by_icao["A11111"]), 2)
         latlons = sorted((r["lat"], r["lon"]) for r in by_icao["A11111"])
         self.assertEqual(latlons, sorted([(42.1, -81.1), (42.5, -81.9)]))
 
-        # B22222 only had a start point — one record.
+        # B22222 only had a start point, one record.
         self.assertEqual(len(by_icao["B22222"]), 1)
         self.assertEqual(by_icao["B22222"][0]["lat"], 43.0)
         self.assertEqual(by_icao["B22222"][0]["lon"], -82.0)
 
-        # C33333 start was 0/0 (no fix) — only the end record survives.
+        # C33333 start was 0/0 (no fix), only the end record survives.
         self.assertEqual(len(by_icao["C33333"]), 1)
         self.assertEqual(by_icao["C33333"][0]["lat"], 41.5)
 

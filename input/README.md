@@ -6,9 +6,9 @@ Save your `ADSB.TXT` (or any other supported ADS-B capture file) into this folde
 python3 muninn.py
 ```
 
-That's it — no arguments needed. Muninn picks up every supported file in this folder, converts each one, and writes the resulting `.wdgwars.json` into the matching `output/` folder.
+That's it, no arguments needed. Muninn picks up every supported file in this folder, converts each one, and writes the resulting `.wdgwars.json` into the matching `output/` folder.
 
-**Note:** if you picked the "On Desktop" option during first-run setup, your active `input/` folder is `Desktop\Muninn\input` (not this one in the repo). This file is just here so the folder isn't empty when you clone the repo — Muninn always reads from whichever folder your saved choice points at.
+**Note:** if you picked the "On Desktop" option during first-run setup, your active `input/` folder is `Desktop\Muninn\input` (not this one in the repo). This file is just here so the folder isn't empty when you clone the repo. Muninn always reads from whichever folder your saved choice points at.
 
 ## Supported file types
 

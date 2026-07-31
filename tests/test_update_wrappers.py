@@ -108,7 +108,7 @@ class UpdateFromRawCallsWrapperRefreshTests(unittest.TestCase):
              mock.patch.object(muninn, "_pip_install_requirements"), \
              mock.patch("sys.stderr", new=io.StringIO()):
             rc = muninn._update_from_raw(Path(td))
-            # Read inside the block — the tempdir is gone after it.
+            # Read inside the block. The tempdir is gone after it.
             written = (Path(td) / "muninn.py").read_text(encoding="utf-8")
         self.assertEqual(rc, 0)
         refresh.assert_called_once()

@@ -9,12 +9,12 @@ Envelope shape (canonical, as accepted by https://wdgwars.pl/api/upload/):
     }
 
 The payload is whatever combination of `networks`, `aircraft`, and
-`meshcore_nodes` keys the caller provides — slots not supplied default to
+`meshcore_nodes` keys the caller provides, slots not supplied default to
 empty lists. The server tolerates any combination; tools fill only the
 slot relevant to their input.
 
 Extracted from muninn.py v1.11.1 upload() (lines 1267-1283). Byte-identical
-output for the same (payload, key, nonce) tuple — preserved deliberately so
+output for the same (payload, key, nonce) tuple, preserved deliberately so
 tests can compare gungnir output against the muninn-1.x golden vectors.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ def build_payload(
 ) -> dict:
     """Assemble the inner payload dict from optional per-slot record lists.
 
-    Unfilled slots default to empty lists — the server rejects payloads
+    Unfilled slots default to empty lists, the server rejects payloads
     missing any of the three known keys with a generic 400, so we always
     include all three.
     """

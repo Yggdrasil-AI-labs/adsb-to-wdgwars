@@ -72,7 +72,7 @@ def build(path: Path) -> None:
                 FirstVerticalRate, FirstSquawk, NumPosMsgRec
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
-                # Two-endpoint flight — both First and Last are valid.
+                # Two-endpoint flight. Both First and Last are valid.
                 (
                     1, 1, 1,
                     "2024-08-15 14:32:11.123",
@@ -84,7 +84,7 @@ def build(path: Path) -> None:
                     420.0, 270.0,
                     1024, "1200", 3500,
                 ),
-                # End coords missing — only First should produce a record.
+                # End coords missing. Only First should produce a record.
                 (
                     2, 1, 2,
                     "2024-08-15 16:00:00",

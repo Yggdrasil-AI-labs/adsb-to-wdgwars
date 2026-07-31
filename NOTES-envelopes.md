@@ -1,4 +1,4 @@
-# Cached output envelopes — generation notes
+# Cached output envelopes - generation notes
 
 Seven new `*.wdgwars.json` files were added under `examples/`, extending
 the existing `dump1090_real.wdgwars.json` pattern. Each is the canonical
@@ -14,7 +14,7 @@ python3 muninn.py examples/<fixture> --no-version-check
 ```
 
 This writes `examples/<stem>.wdgwars.json` next to the input (Muninn's
-default output behavior — `--out` was not needed). The `.wdgwars.json`
+default output behavior. `--out` was not needed). The `.wdgwars.json`
 content is exactly what `_to_dump1090_fa(records)` returns in `muninn.py`
 serialized with `json.dumps(..., indent=2)`.
 
@@ -23,7 +23,7 @@ serialized with `json.dumps(..., indent=2)`.
 | Fixture | Aircraft | Notes |
 |---|---:|---|
 | `stratux_sample.json`         | 12 | clean |
-| `tar1090_chunk_sample.json.gz`| 12 | clean (file renamed — see below) |
+| `tar1090_chunk_sample.json.gz`| 12 | clean (file renamed, see below) |
 | `vrs_sample.json`             | 12 | clean |
 | `ndjson_sample.json`          | 12 | clean |
 | `sbs1_sample.txt`             |  3 | clean |
@@ -41,7 +41,7 @@ output is `tar1090_chunk_sample.json.wdgwars.json` because `Path.stem`
 only strips the final `.gz` extension. The committed file has been
 renamed to `tar1090_chunk_sample.wdgwars.json` to keep the cached-envelope
 naming convention consistent (one `.json.wdgwars.json` chain instead of
-two). The file *content* is exactly what the CLI emits — only the
+two). The file *content* is exactly what the CLI emits, only the
 filename was adjusted post-write.
 
 ## Reproducing or extending
