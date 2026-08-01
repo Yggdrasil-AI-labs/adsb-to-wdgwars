@@ -10,6 +10,13 @@ LingerTests below is the exception: it covers the v2.1.1 systemd-lingering
 check/enable step with `subprocess.run`, `shutil.which`, and `getpass.getuser`
 all mocked. Real `loginctl` is never invoked by this suite either.
 
+InteractiveScheduleSetupTests is a second exception: it drives the
+--schedule wizard's decision logic (folder/glob/mode/dry-run/install
+prompts) end to end, but mocks the actual install_systemd_user /
+install_cron / install_windows_task calls, so no real unit, crontab
+entry, or scheduled task is ever touched, only the wizard's own
+branching gets exercised.
+
 Run: python -m unittest tests/test_scheduler.py
 """
 from __future__ import annotations
@@ -408,6 +415,147 @@ class LingerTests(unittest.TestCase):
         with mock.patch.object(muninn.subprocess, "run",
                                return_value=_cp(returncode=1)):
             self.assertIsNone(muninn._linger_state("pilot"))
+
+
+class InteractiveScheduleSetupTests(unittest.TestCase):
+    """--schedule's interactive wizard. Every scenario mocks the four
+    prompt seams (_prompt_yes_no, _prompt_str, _prompt_int, builtins
+    input) plus _guess_decoder_dirs and _schedule_mechanism, so no real
+    terminal is needed. install_systemd_user / install_cron /
+    install_windows_task are mocked too: this class checks the wizard's
+    own branching, not the installers (those stay covered by manual
+    release verification per the module docstring above)."""
+
+    def setUp(self):
+        mock.patch("sys.stderr", new_callable=io.StringIO).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_declining_setup_returns_zero(self):
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               return_value=False):
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 0)
+
+    def test_empty_folder_answer_cancels(self):
+        with mock.patch.object(muninn, "_prompt_yes_no", return_value=True), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[]), \
+             mock.patch.object(muninn, "_prompt_str", return_value=""):
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 1)
+
+    def test_detected_candidates_get_listed(self):
+        # Non-empty _guess_decoder_dirs() takes the "Detected likely
+        # decoder output folders" branch instead of the empty-default one.
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               side_effect=[True, True, False]), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[Path("/run/dump1090-fa")]), \
+             mock.patch.object(muninn, "_prompt_str",
+                               side_effect=["/run/dump1090-fa",
+                                           "aircraft.json"]), \
+             mock.patch("builtins.input", return_value=""), \
+             mock.patch.object(muninn, "_prompt_int", return_value=5), \
+             mock.patch.object(muninn, "_schedule_mechanism",
+                               return_value="systemd"):
+            rc = muninn.interactive_schedule_setup()
+        # Final "Install now?" declined -> skip message, rc 0.
+        self.assertEqual(rc, 0)
+        self.assertIn("Detected likely decoder output folders",
+                      sys.stderr.getvalue())
+
+    def test_cron_cannot_run_watch_mode(self):
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               side_effect=[True, True]), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[]), \
+             mock.patch.object(muninn, "_prompt_str",
+                               side_effect=["/tmp/decoder",
+                                           "chunk_*.json.gz"]), \
+             mock.patch("builtins.input", return_value="1"), \
+             mock.patch.object(muninn, "_schedule_mechanism",
+                               return_value="cron"):
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 1)
+        self.assertIn("cron can't run a long-lived watch daemon",
+                      sys.stderr.getvalue())
+
+    def test_explicit_watch_choice_on_rolling_pattern_warns(self):
+        # Rolling pattern preselects periodic (default "2"); explicitly
+        # typing "1" anyway takes the watch branch and prints the
+        # "one file rewritten in place" note.
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               side_effect=[True, True, False]), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[]), \
+             mock.patch.object(muninn, "_prompt_str",
+                               side_effect=["/tmp/decoder",
+                                           "aircraft.json"]), \
+             mock.patch("builtins.input", return_value="1"), \
+             mock.patch.object(muninn, "_schedule_mechanism",
+                               return_value="systemd"):
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 0)
+        self.assertIn("is one file rewritten in place",
+                      sys.stderr.getvalue())
+
+    def test_declining_final_install_returns_zero(self):
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               side_effect=[True, True, False]), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[]), \
+             mock.patch.object(muninn, "_prompt_str",
+                               side_effect=["/tmp/decoder",
+                                           "aircraft.json"]), \
+             mock.patch("builtins.input", return_value=""), \
+             mock.patch.object(muninn, "_prompt_int", return_value=5), \
+             mock.patch.object(muninn, "_schedule_mechanism",
+                               return_value="systemd"):
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 0)
+        self.assertIn("Skipped. To install non-interactively later",
+                      sys.stderr.getvalue())
+
+    def test_systemd_dry_run_install_reports_dry_run_success(self):
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               side_effect=[True, True, True]), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[]), \
+             mock.patch.object(muninn, "_prompt_str",
+                               side_effect=["/tmp/decoder",
+                                           "aircraft.json"]), \
+             mock.patch("builtins.input", return_value=""), \
+             mock.patch.object(muninn, "_prompt_int", return_value=5), \
+             mock.patch.object(muninn, "_schedule_mechanism",
+                               return_value="systemd"), \
+             mock.patch.object(muninn, "install_systemd_user",
+                               return_value=0) as install:
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 0)
+        install.assert_called_once()
+        self.assertTrue(install.call_args.kwargs.get("dry_run"))
+        self.assertIn("Schedule installed in DRY-RUN mode",
+                      sys.stderr.getvalue())
+
+    def test_live_install_reports_live_success(self):
+        with mock.patch.object(muninn, "_prompt_yes_no",
+                               side_effect=[True, False, True]), \
+             mock.patch.object(muninn, "_guess_decoder_dirs",
+                               return_value=[]), \
+             mock.patch.object(muninn, "_prompt_str",
+                               side_effect=["/tmp/decoder",
+                                           "aircraft.json"]), \
+             mock.patch("builtins.input", return_value=""), \
+             mock.patch.object(muninn, "_prompt_int", return_value=5), \
+             mock.patch.object(muninn, "_schedule_mechanism",
+                               return_value="systemd"), \
+             mock.patch.object(muninn, "install_systemd_user",
+                               return_value=0) as install:
+            rc = muninn.interactive_schedule_setup()
+        self.assertEqual(rc, 0)
+        self.assertFalse(install.call_args.kwargs.get("dry_run"))
+        self.assertIn("Schedule installed (live uploads enabled)",
+                      sys.stderr.getvalue())
 
 
 if __name__ == "__main__":
