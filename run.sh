@@ -25,7 +25,7 @@ else
     "$PY" muninn.py "$@"
 fi
 echo
-if [ -t 0 ]; then
+if [ -t 0 ] && [ -t 1 ]; then
     read -n 1 -s -r -p "Press any key to close..."
     echo
 fi

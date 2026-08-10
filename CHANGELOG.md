@@ -4,6 +4,19 @@ All notable changes to Muninn are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`run.sh` no longer blocks when a caller captures its output.** The
+  "Press any key to close..." prompt exists for the double-click case,
+  but it was gated on stdin alone. A program that runs the wrapper with
+  its stdout on a pipe while stdin is still the terminal (Sleipnir's
+  `output_muninn` plugin does exactly this, through `MUNINN_BIN`) would
+  hang forever on that read. The prompt now requires both stdin and
+  stdout to be a terminal: true when a human double-clicks, false for
+  any programmatic caller.
+
 ## [2.1.3] - 2026-07-29 - watch mode gets the v2.1.2 treatment
 
 Bug-fix release, closing the item the v2.1.2 notes deferred as "a
