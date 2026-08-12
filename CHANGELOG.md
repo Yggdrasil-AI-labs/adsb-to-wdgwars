@@ -17,6 +17,20 @@ All notable changes to Muninn are documented here. Format follows
   stdout to be a terminal: true when a human double-clicks, false for
   any programmatic caller.
 
+## [2.2.1] - 2026-08-12 - State the upload authorisation and one-key-per-tool up front
+
+### Added
+
+- **The setup wizard and README now say what a configured key actually
+  authorises.** `interactive_setup()` and the README's API-key section tell
+  people to generate a key just for Muninn rather than reusing one they
+  handed another tool, note that keys are revoked one at a time from the
+  profile page, and state that configuring a key authorises Muninn to
+  upload under the user's own account without asking again per upload,
+  pointing at `--preview` / `--dry-run` to see what would be sent first.
+  Informational text only, added next to the existing wizard prompt; it
+  does not add a new question or block on any input.
+
 ## [2.2.0] - 2026-08-12 - No unattended calls: the version check is now opt-in
 
 ### Changed

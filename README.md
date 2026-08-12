@@ -197,6 +197,10 @@ First time, Muninn asks for your WDGWars API key (y/n prompt, local conversion w
 
 Grab your API key from your WDGWars profile page.
 
+Generate a key just for Muninn and give it a name, rather than reusing one you handed another tool. Keys are switched off one at a time from the same profile page, so revoking this one later costs you nothing else.
+
+By configuring a key you're authorising Muninn to upload the captures you give it to WDGWars under your own account. It won't ask again per upload. Use `--preview` or `--dry-run` to see exactly what would be sent before you commit to it.
+
 ---
 
 ## Running on a schedule

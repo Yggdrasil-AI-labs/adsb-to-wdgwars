@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -510,6 +510,15 @@ def interactive_setup() -> int:
     print("", file=sys.stderr)
     print(" Get your key from: https://wdgwars.pl/  →  profile  →  API Key", file=sys.stderr)
     print(f" It will be saved to: {_key_path()}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(" Generate a key just for Muninn and name it, rather than reusing", file=sys.stderr)
+    print(" one you gave another tool. You can switch a single key off from", file=sys.stderr)
+    print(" the same profile page without touching the others.", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(" By setting up a key you are authorising Muninn to upload the", file=sys.stderr)
+    print(" captures you give it to WDGWars under your own account. It will", file=sys.stderr)
+    print(" not ask again per upload. Use --dry-run or --preview to see", file=sys.stderr)
+    print(" exactly what would be sent first.", file=sys.stderr)
     print("", file=sys.stderr)
 
     if not _prompt_yes_no(" Set up your WDGWars API key now?", default=True):
