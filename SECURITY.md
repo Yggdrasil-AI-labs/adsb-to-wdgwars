@@ -7,17 +7,20 @@
 - Decodes aircraft records.
 - Writes a JSON output file next to the input, or in the configured output folder.
 - Optionally POSTs the records to `https://wdgwars.pl/endpoint/upload/` (the server's Cloudflare-friendly alias of `/api/upload/`, default since v2.0.4; configurable).
-- Once per 24h, makes a single HEAD request to GitHub's releases API to check for a newer version. Cached locally in `~/.config/muninn/version-check.json`. Disable by deleting that file (it'll be re-checked but never sooner than daily).
+- On request only, checks GitHub's releases API for a newer version (`--check-version`) and self-updates (`--update`). See below.
 - On Windows, may create a desktop shortcut (`Muninn.lnk`) pointing at the local `muninn.py` script, only when the user explicitly says yes during first-run setup.
 
-## What this tool **does not** do
+## Outbound network footprint
 
-- ❌ **No telemetry or analytics.** The only outbound traffic is:
-  - `https://wdgwars.pl/endpoint/upload/` (alias of `/api/upload/`). Only when `--upload` is set. Hostname hardcoded; override with `--api-url`.
-  - `https://api.github.com/repos/Yggdrasil-AI-labs/adsb-to-wdgwars/releases/latest`: single HEAD request, **at most once per 24h**, to compare your local version to the latest tag. No identifiers, no machine info, no usage data. Just a public-API call to read a release tag. Result is cached in `~/.config/muninn/version-check.json`. Delete that file to reset; set `__version__` to `"99.0.0"` or stub out `_check_for_update()` if you want to disable it entirely.
-  - A raw TCP connection to whatever `--stream HOST[:PORT]` you pass. Only when that flag is set, and only to the address you gave it. Muninn never scans, defaults to, or discovers a host on its own; if you don't pass `--stream`, no such connection is ever attempted.
+**Nothing here contacts anybody unless you invoked a command that says so.** There is no background check, no timer, and no call on an ordinary run.
+
+- **Uploads** go only to `https://wdgwars.pl/endpoint/upload/` (alias of `/api/upload/`), and only when `--upload` is set. Hostname hardcoded; override with `--api-url`.
+- **Version check** (`--check-version`): a single request to `https://api.github.com/repos/Yggdrasil-AI-labs/adsb-to-wdgwars/releases/latest`, 3s timeout, prints whether a newer release exists. It is worth knowing what that request shows GitHub, since GitHub is a third party and not us: your source IP, the exact version you are running (it is in the User-Agent), which tool you are running, and the time you ran it. That is why it is a command you type rather than something this tool does on its own. Earlier releases checked once per 24h on almost every run, with `--no-version-check` and `--quiet` as the opt-out. That was the wrong default and it is gone. The flag is still accepted and ignored so existing cron lines, systemd units, and Windows scheduled tasks keep working. Result is cached in `~/.config/muninn/version-check.json` (`--check-version` always bypasses the cache); delete that file to reset.
+- **Self-update** (`--update`): downloads `muninn.py` and the wrapper scripts from this repo's `main` branch (or does a `git pull` if you cloned the repo). An explicit, operator-invoked action. Nothing updates itself in the background.
+- A raw TCP connection to whatever `--stream HOST[:PORT]` you pass, only when that flag is set, and only to the address you gave it. Muninn never scans, defaults to, or discovers a host on its own; if you don't pass `--stream`, no such connection is ever attempted.
+- ❌ **No telemetry or analytics.** Nothing else leaves the machine.
 - ❌ **No `eval`, `exec`, `os.system`, or `shell=True` subprocess calls.** No command-injection paths.
-- ❌ **No remote code download/execution.** Pure stdlib + optional `pyModeS` (open-source, MIT, well-known in the ADS-B community).
+- ❌ **No remote code download/execution outside `--update`, which you invoke explicitly.** Pure stdlib + optional `pyModeS` (open-source, MIT, well-known in the ADS-B community).
 - ❌ **No data sent anywhere except WDGWars when explicitly opted in via `--upload`.**
 
 ## API key handling

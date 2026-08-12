@@ -356,6 +356,8 @@ Notes on `.sqb`:
 --preview          print the first 6 normalised records as JSON lines and
                    exit (no file written, no upload, parser dry-run)
 --version          print Muninn's version
+--check-version    ask GitHub whether a newer release exists, then exit
+                   (the only thing here that contacts GitHub on its own)
 --update           pull the latest release (git pull if you cloned; ZIP
                    installs refresh muninn.py, requirements.txt, and the
                    run/setup/update wrapper scripts)
@@ -371,8 +373,9 @@ Notes on `.sqb`:
 --schedule-dry-run install the schedule with --dry-run baked in
 -q, --quiet        suppress informational output (banners, format/decoded
                    notices, range + dump1090 warnings). Errors still print.
---no-version-check skip the daily GitHub release check entirely (use for
-                   offline / privacy-conscious setups).
+--no-version-check accepted for compatibility, does nothing (Muninn never
+                   checks for updates on its own any more; use
+                   --check-version instead)
 --open             after writing JSON, pop open the output folder in your
                    file manager (Explorer / Finder / xdg-open).
 --config           print the current Muninn config (folders, key, version)
@@ -430,7 +433,7 @@ If you prefer the CLI:
 
 `muninn.py --update` also refreshes `requirements.txt` and re-runs pip itself, so direct CLI updates self-heal too. But only if `muninn.py` can already load (i.e. its current deps are installed). The wrapper script is the more robust path because it bootstraps deps before importing anything.
 
-Muninn also does a once-a-day background check against the GitHub releases API and prints a one-liner on launch if a newer version is out. No telemetry, single HEAD request, cached locally for 24h. See [CHANGELOG.md](CHANGELOG.md) for per-release notes.
+Muninn never phones home on its own. If you want to know whether a newer release exists, run `--check-version` and it asks GitHub once and tells you. Nothing else on an ordinary run contacts anybody except the WDGWars upload endpoint, and only when you invoke an upload. See [CHANGELOG.md](CHANGELOG.md) for per-release notes.
 
 ---
 

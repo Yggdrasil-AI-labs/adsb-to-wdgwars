@@ -17,6 +17,42 @@ All notable changes to Muninn are documented here. Format follows
   stdout to be a terminal: true when a human double-clicks, false for
   any programmatic caller.
 
+## [2.2.0] - 2026-08-12 - No unattended calls: the version check is now opt-in
+
+### Changed
+
+- **Muninn no longer contacts GitHub on its own.** The release check used to
+  run on almost every invocation, cached for 24h, with `--no-version-check` or
+  `--quiet` as the opt-out. Nobody consented to that and most people never
+  read the flag. It is now reachable only through the new `--check-version`,
+  and an ordinary run makes no third-party request at all.
+
+  Worth stating why, since the check never sent anything about you or your
+  captures: the request itself shows GitHub your source IP, the exact version
+  you are running (it is in the User-Agent), which tool you are running, and
+  the time you ran it. Roughly once a day, per machine. That is a disclosure
+  to a third party, so it should be something you ask for rather than
+  something you have to find a flag to stop.
+
+- `_check_for_update()` takes `force=True` from `--check-version` so an
+  explicit ask bypasses the 24h cache and gets a fresh answer. `--update`
+  still uses the cached path.
+
+### Compatibility
+
+- `--no-version-check` is still accepted and now does nothing. It is baked
+  into existing cron lines, systemd units, and schtasks actions, and erroring
+  on an unknown argument would break a working scheduled upload. It is hidden
+  from `--help`. `--quiet` keeps its other meanings.
+- Nothing else changed: uploads, the HMAC envelope, key handling, and the
+  scheduler are untouched.
+
+### Added
+
+- `tests/test_security.py::NoUnattendedEgressTests` locks the new contract in:
+  a normal run never calls the checker, `--check-version` still does, and the
+  legacy flag is still accepted.
+
 ## [2.1.3] - 2026-07-29 - watch mode gets the v2.1.2 treatment
 
 Bug-fix release, closing the item the v2.1.2 notes deferred as "a

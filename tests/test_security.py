@@ -9,11 +9,14 @@ entry, or touches the network.
 Run: python -m unittest tests/test_security.py
 """
 from __future__ import annotations
+import io
 import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -233,6 +236,60 @@ class DecoderDirSymlinkTests(unittest.TestCase):
         for p in muninn._guess_decoder_dirs():
             self.assertTrue(p.is_dir())
             self.assertFalse(p.is_symlink())
+
+
+class NoUnattendedEgressTests(unittest.TestCase):
+    """Muninn must not talk to any third party unless the operator asked.
+
+    The GitHub release check used to run on every invocation (opt-out via
+    --quiet / --no-version-check), which disclosed the user's IP, their
+    exact version, which tool they run, and a rough daily usage cadence to
+    GitHub without ever asking. It is now reachable only through
+    --check-version (and --update). These tests lock that in: a normal run
+    makes no check, the explicit flag still does, and the legacy opt-out
+    flag keeps parsing so existing scheduled uploads don't break.
+    """
+
+    def _capture_fixture(self, d: str) -> Path:
+        f = Path(d) / "cap.csv"
+        f.write_text(
+            "MSG,3,1,1,A11111,1,2026/06/01,12:00:00,"
+            "2026/06/01,12:00:00,TST00,35000,480,270,40.5,-80.5,"
+            "0,0,0,0,0,0\n",
+            encoding="utf-8",
+        )
+        return f
+
+    def _run(self, argv):
+        buf = io.StringIO()
+        with mock.patch.object(sys, "argv", ["muninn.py", *argv]), \
+                redirect_stderr(buf), redirect_stdout(buf):
+            rc = muninn.main()
+        return rc, buf.getvalue()
+
+    def test_normal_run_never_checks_for_updates(self):
+        # No -q, no --no-version-check: the old code path would fire here.
+        with tempfile.TemporaryDirectory() as d:
+            f = self._capture_fixture(d)
+            with mock.patch.object(muninn, "_check_for_update") as chk:
+                rc, _ = self._run(["--preview", str(f)])
+            self.assertEqual(rc, 0)
+            chk.assert_not_called()
+
+    def test_check_version_flag_still_checks(self):
+        with mock.patch.object(muninn, "_check_for_update",
+                                return_value=None) as chk:
+            rc, _ = self._run(["--check-version"])
+        self.assertEqual(rc, 0)
+        chk.assert_called_once()
+
+    def test_legacy_no_version_check_flag_is_still_accepted(self):
+        # Baked into existing cron lines / systemd units / schtasks actions;
+        # erroring on it would break a working scheduled upload.
+        with tempfile.TemporaryDirectory() as d:
+            f = self._capture_fixture(d)
+            rc, _ = self._run(["--no-version-check", "--preview", str(f)])
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

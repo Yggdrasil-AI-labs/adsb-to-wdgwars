@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.1.3"
+__version__ = "2.2.0"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -3111,10 +3111,14 @@ def _version_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _check_for_update() -> str | None:
+def _check_for_update(force: bool = False) -> str | None:
     """Quick non-blocking version check against the GitHub releases API.
-    Cached for 24h in the user's config dir so we don't hammer the API.
-    Returns the latest tag string IF it parses as strictly newer than
+
+    Only ever reached from --check-version or --update: nothing calls this
+    on an ordinary run. Cached for 24h in the user's config dir so repeated
+    --update attempts don't hammer the API; `force` skips the cache so an
+    operator who explicitly asked gets a fresh answer rather than a stale
+    one. Returns the latest tag string IF it parses as strictly newer than
     __version__, else None.
 
     Comparing strictly newer (rather than not-equal) avoids the false
@@ -3125,7 +3129,7 @@ def _check_for_update() -> str | None:
     cache = _key_path().parent / "version-check.json"
     cur_v = _version_tuple(__version__)
     try:
-        if cache.exists():
+        if cache.exists() and not force:
             blob = json.loads(cache.read_text())
             if time.time() - blob.get("checked_at", 0) < 86400:
                 latest = blob.get("latest")
@@ -3348,6 +3352,9 @@ def main() -> int:
     ap.add_argument("--update", action="store_true",
                     help="pull the latest version of muninn (uses git pull "
                          "if you cloned the repo, otherwise downloads muninn.py from GitHub)")
+    ap.add_argument("--check-version", action="store_true",
+                    help="ask GitHub whether a newer release exists, then exit "
+                         "(the only thing here that contacts GitHub on its own)")
     ap.add_argument("input", nargs="*",
                     help="ADS-B capture file (.txt, .csv, .json) "
                          "OR a directory when used with --watch. "
@@ -3444,8 +3451,10 @@ def main() -> int:
                     help="suppress informational output (banners, format/decoded "
                          "notices, dump1090 + range warnings). Errors still print.")
     ap.add_argument("--no-version-check", action="store_true",
-                    help="skip the daily GitHub release check entirely "
-                         "(use for offline / privacy-conscious setups).")
+                    help=argparse.SUPPRESS)  # accepted for compatibility; no
+    # automatic check happens any more, so this is a no-op. Existing cron
+    # lines, systemd units and schtasks actions carry it, and erroring on an
+    # unknown argument would break a working scheduled upload.
     ap.add_argument("--open", dest="open_after", action="store_true",
                     help="after writing JSON, open the output folder in your "
                          "OS file manager (Explorer / Finder / xdg-open).")
@@ -3489,14 +3498,20 @@ def main() -> int:
             print("[muninn] no saved folder choice to reset.", file=sys.stderr)
         return 0
 
-    # Soft nudge: if a newer release is out, mention it (non-blocking, daily-cached).
-    # Skipped under --quiet and --no-version-check.
-    if not args.quiet and not args.no_version_check:
-        newer = _check_for_update()
+    # Version check is explicit-only. It used to run on every invocation with
+    # --quiet / --no-version-check as the opt-out, which disclosed the user's
+    # IP, their exact version and a rough daily usage cadence to GitHub
+    # without ever asking. Nothing here talks to a third party unless the
+    # operator typed a command that says so.
+    if args.check_version:
+        newer = _check_for_update(force=True)
         if newer:
-            print(f"[muninn] note: v{newer} is available "
+            print(f"[muninn] v{newer} is available "
                   f"(you're on v{__version__}). Run `--update` to upgrade.",
                   file=sys.stderr)
+        else:
+            print(f"[muninn] v{__version__} is current.", file=sys.stderr)
+        return 0
 
     _check_dump1090_net()
 
