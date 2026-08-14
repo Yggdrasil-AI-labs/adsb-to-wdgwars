@@ -609,8 +609,38 @@ def check_whoami(key: str) -> int:
 
 
 # ── Format detection ────────────────────────────────────────────────────────
+# How many unrecognised lines to look past before accepting the generic CSV
+# fallback. Bounded so detection stays O(1)-ish on a multi-gigabyte capture;
+# generous enough to clear a banner or a partial leading frame.
+DETECT_SCAN_LINES = 50
+
+
+def _classify_line(s: str) -> str | None:
+    """Return the format a single stripped line is a signature for, or None.
+
+    Split out of `detect_format` so the same test can be applied to more than
+    just the first line of a file. The checks and their order are unchanged;
+    only the CSV fallback moved out, because CSV is what we assume in the
+    absence of a signature rather than something a line positively identifies.
+    """
+    if s.startswith("*") and s.endswith(";"):
+        return "avr"
+    if s.startswith("MSG,") or s.startswith("SEL,") or s.startswith("ID,"):
+        return "sbs1"
+    if s.startswith("{") or s.startswith("["):
+        return "json"
+    # PortaPack Mayhem ADSB.TXT format, raw hex prefix + labeled fields:
+    # "8DA4... ICAO:A41144 [Squawk:NNNN] [CALLSIGN] [Alt:N] [Lat:F Lon:F] ..."
+    if " ICAO:" in s and s[:14].replace(" ", "").isalnum():
+        return "mayhem"
+    # Tab-separated AVR variants (some receivers prefix with timestamp)
+    if "*" in s and s.endswith(";"):
+        return "avr-tagged"
+    return None
+
+
 def detect_format(path: Path) -> str:
-    """Sniff the first non-empty, non-comment line and decide the format.
+    """Sniff the leading lines of a file and decide the format.
 
     Transparently handles gzip, .gz / .json.gz files (tar1090 history
     chunks) are decompressed on the fly for sniffing. The full parser does
@@ -666,6 +696,7 @@ def detect_format(path: Path) -> str:
         opener = lambda: path.open("r", encoding="utf-8", errors="replace")
 
     with opener() as f:
+        scanned = 0
         for raw in f:
             s = raw.strip()
             # Skip blanks and comment lines. AVR captures from pyModeS-style
@@ -674,20 +705,28 @@ def detect_format(path: Path) -> str:
             # line that STARTS with `;` is unambiguously a comment.
             if not s or s.startswith("#") or s.startswith(";"):
                 continue
-            if s.startswith("*") and s.endswith(";"):
-                return "avr"
-            if s.startswith("MSG,") or s.startswith("SEL,") or s.startswith("ID,"):
-                return "sbs1"
-            if s.startswith("{") or s.startswith("["):
-                return "json"
-            # PortaPack Mayhem ADSB.TXT format, raw hex prefix + labeled fields:
-            # "8DA4... ICAO:A41144 [Squawk:NNNN] [CALLSIGN] [Alt:N] [Lat:F Lon:F] ..."
-            if " ICAO:" in s and s[:14].replace(" ", "").isalnum():
-                return "mayhem"
-            # Tab-separated AVR variants (some receivers prefix with timestamp)
-            if "*" in s and s.endswith(";"):
-                return "avr-tagged"
-            # Otherwise treat as a generic CSV. Caller can hint via --csv-format
+            fmt = _classify_line(s)
+            if fmt:
+                return fmt
+            # No signature on this line. Rather than settle for the generic
+            # CSV fallback on the strength of one line, keep looking for a
+            # bounded while.
+            #
+            # One odd leading line used to misclassify a whole file. A capture
+            # that begins mid-frame (SD card pulled while writing, or a
+            # fragment copied out of a longer log) or that carries any banner
+            # or status line ahead of the frames fell straight through to CSV.
+            # A PortaPack Mayhem ADSB.TXT that lost its first line that way
+            # decoded zero aircraft and advised the user to pass --csv-format,
+            # which is advice for a format the file is not in. Every format
+            # here is identified by a per-line signature, so one unreadable
+            # line should not get to decide the file.
+            scanned += 1
+            if scanned >= DETECT_SCAN_LINES:
+                break
+        if scanned:
+            # Genuinely nothing recognisable in the window: a real CSV's header
+            # and rows land here, which is the intended fallback.
             return "csv"
     return "empty"
 

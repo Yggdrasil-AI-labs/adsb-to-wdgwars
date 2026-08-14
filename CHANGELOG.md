@@ -8,6 +8,30 @@ All notable changes to Muninn are documented here. Format follows
 
 ### Fixed
 
+- **One odd leading line no longer misclassifies a whole capture.**
+  `detect_format` decided from the first non-blank, non-comment line alone,
+  falling through to a generic CSV verdict on that one line with no
+  lookahead. A valid PortaPack Mayhem `ADSB.TXT` whose first line was not a
+  clean frame was therefore read as CSV, decoded zero aircraft, and printed
+  `Could not detect CSV columns. Pass --csv-format with the column order.`,
+  which is advice for a format the file is not in. Three shapes reproduced
+  it: a capture beginning mid-frame (SD card pulled while writing, or a
+  fragment copied out of a longer log), a leading banner or status line, and
+  any other unrecognised first line.
+
+  Detection now looks past unrecognised lines for a bounded window
+  (`DETECT_SCAN_LINES`, 50) before accepting the CSV fallback. The per-line
+  checks and their order are unchanged, extracted as `_classify_line`, which
+  returns `None` where it used to return `"csv"`, since CSV is what gets
+  assumed in the absence of a signature rather than something a line
+  positively identifies. A file whose first line IS a signature still returns
+  on that line, so nothing that already detected correctly changes.
+
+  The parser was never at fault here, `--format mayhem` already recovered
+  every one of these. Found while checking a PortaPack ADS-B upload failure
+  two players reported on 2026-08-14, by building format variants from the
+  spec in this file's own source comment and running each one through.
+
 - **`run.sh` no longer blocks when a caller captures its output.** The
   "Press any key to close..." prompt exists for the double-click case,
   but it was gated on stdin alone. A program that runs the wrapper with

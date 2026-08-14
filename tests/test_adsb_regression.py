@@ -155,5 +155,71 @@ class AdsbRegressionTests(unittest.TestCase):
         self.assertEqual(rows["A71234"]["alt_ft"], 28000)
 
 
+class DetectionLooksPastTheFirstLineTests(unittest.TestCase):
+    """Detection used to decide from the first non-blank line alone, with an
+    unconditional CSV fallback, so one odd leading line misclassified a whole
+    file. A valid PortaPack Mayhem capture then read as CSV, decoded zero
+    aircraft, and advised the user to pass --csv-format, which is advice for a
+    format the file is not in.
+
+    The parser was never the problem: `--format mayhem` recovered every case
+    below, so these pin the detection side.
+    """
+
+    GOOD = ("8D111111990D7B0DE80C056DE73E ICAO:111111 TEST111 Alt:34000 "
+            "Lat:11.111111 Lon:-11.111111 Hdg:291 GS:368\n")
+
+    def _write(self, body: str, suffix: str = ".txt") -> Path:
+        f = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False,
+                                        encoding="utf-8", newline="")
+        f.write(body)
+        f.close()
+        return Path(f.name)
+
+    def test_capture_beginning_mid_frame_is_still_mayhem(self):
+        # SD card pulled while writing, or a fragment copied out of a longer
+        # log: the first line is the tail of a frame and matches nothing.
+        p = self._write("0DE80C056DE73E Lat:11.11\n" + self.GOOD)
+        self.assertEqual(muninn.detect_format(p), "mayhem")
+        self.assertEqual(len(muninn.parse_mayhem(p)), 1)
+
+    def test_leading_banner_line_is_still_mayhem(self):
+        p = self._write("PortaPack Mayhem ADS-B log\n\n" + self.GOOD)
+        self.assertEqual(muninn.detect_format(p), "mayhem")
+
+    def test_blank_leading_lines_are_still_mayhem(self):
+        p = self._write("\n\n" + self.GOOD)
+        self.assertEqual(muninn.detect_format(p), "mayhem")
+
+    def test_a_real_csv_is_still_csv(self):
+        # The fallback has to keep working: a header plus rows carries no
+        # per-line signature and must not be adopted by another format.
+        p = self._write("hex,flight,lat,lon,altitude\n"
+                        "A11111,TEST111,11.1,-11.1,34000\n", suffix=".csv")
+        self.assertEqual(muninn.detect_format(p), "csv")
+
+    def test_empty_file_is_still_empty(self):
+        self.assertEqual(muninn.detect_format(self._write("")), "empty")
+        self.assertEqual(muninn.detect_format(self._write("\n\n\n")), "empty")
+
+    def test_a_first_line_signature_still_wins_immediately(self):
+        # A file whose first line IS a signature must return on that line
+        # rather than scanning on and finding a different format below it.
+        p = self._write("MSG,3,,,A11111,,,,,,,,35000,,,11.1,-11.1,,,,,\n"
+                        "8D111111990D7B0DE80C056DE73E ICAO:111111 Alt:1\n")
+        self.assertEqual(muninn.detect_format(p), "sbs1")
+
+    def test_scan_window_is_bounded(self):
+        # A genuine CSV with many unrecognised rows must not be read to the end
+        # of a multi-gigabyte file just to reach the same verdict.
+        p = self._write("col_a,col_b\n" + ("1,2\n" * 5000), suffix=".csv")
+        self.assertEqual(muninn.detect_format(p), "csv")
+        self.assertLessEqual(muninn.DETECT_SCAN_LINES, 200)
+
+    def test_classify_line_reports_no_signature_as_none(self):
+        self.assertIsNone(muninn._classify_line("just some text"))
+        self.assertEqual(muninn._classify_line(self.GOOD.strip()), "mayhem")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
