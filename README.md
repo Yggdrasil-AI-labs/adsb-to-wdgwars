@@ -24,16 +24,23 @@ Sibling repos in the WDGWars feeder family:
 - [wdgwars-api-tester](https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester). API surface probe
 
 > **Linked by WDGWars as the recommended advanced converter.** The
-> WDGWars portal includes a native importer for the common JSON
-> dialects (dump1090 / readsb / tar1090 / Stratux / VRS / Sleipnir)
-> and the SBS-1 / PortaPack Mayhem text formats, drag-and-drop a
-> file and it imports. For everything else. AVR raw Mode-S, Mode-S
-> Beast binary, GDL-90 binary, NDJSON, gzipped tar1090 chunks,
-> BaseStation `.sqb`, and the HMAC-signed `/api/upload/` route, the
-> portal links Muninn from `/help`, `/changelog`, and the
-> upload-profile UI as the recommended path. If your receiver
-> already speaks a dialect the portal accepts, you can skip Muninn;
-> if not, you're in the right place.
+> WDGWars portal has its own importer for the common JSON dialects
+> (dump1090 / readsb / tar1090 / Stratux / VRS / Sleipnir), so if
+> your receiver already writes one of those you can drag it straight
+> in and skip Muninn entirely. For everything else. AVR raw Mode-S,
+> Mode-S Beast binary, GDL-90 binary, NDJSON, gzipped tar1090
+> chunks, BaseStation `.sqb`, PortaPack Mayhem text, and the
+> HMAC-signed `/api/upload/` route, the portal links Muninn from
+> `/help`, `/changelog`, and the upload-profile UI as the
+> recommended path.
+>
+> Treat that list as a description of Muninn, not a promise about the
+> portal: which formats the portal itself accepts is LOCOSP's to
+> change and is not tracked here. An earlier version of this note
+> listed PortaPack Mayhem text among the formats the portal imports
+> natively. Players reported otherwise on 2026-08-14 and LOCOSP said
+> the same in the same thread, so it has been moved to the Muninn
+> column. If in doubt, convert first, it costs you nothing.
 
 **Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
 formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
@@ -58,7 +65,13 @@ Muninn ships in **two flavours** that share the same parsing core. Use whichever
 
 If you're running on a Raspberry Pi, a server, or anything without a desktop, **use the CLI**: the rest of this README is for you. Scroll down to [CLI install](#cli-install).
 
-If you just want to drop a file and have it uploaded, **use the web version** at [hiroalleycat.github.io/adsb-to-wdgwars](https://hiroalleycat.github.io/adsb-to-wdgwars) (deploys from the `web/` directory in this repo).
+If you just want to drop a file in and get one out, **use the web version**, no install and no Python:
+
+### 👉 [yggdrasil-ai-labs.github.io/adsb-to-wdgwars](https://yggdrasil-ai-labs.github.io/adsb-to-wdgwars/)
+
+Drag your capture onto that page and it converts in your browser, so the file never leaves your machine. Click **Download JSON**, then drag *that* file into the upload form on wdgwars.pl. The JSON is in the dump1090-fa shape the upload page accepts, and you do not need an API key for that route. Deploys from the `web/` directory in this repo.
+
+**PortaPack / HackRF users specifically:** your `ADSB.TXT` goes straight onto that page. The filename is not the format, so a file called `ADSB.TXT` that holds Mayhem's own line format is not the same thing as a dump1090 file, which is why uploading the raw `.txt` bounces. Converting it first is the whole job this tool does.
 
 ---
 

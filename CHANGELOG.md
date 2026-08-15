@@ -8,6 +8,27 @@ All notable changes to Muninn are documented here. Format follows
 
 ### Fixed
 
+- **The README's link to the web version was dead.** It pointed at
+  `hiroalleycat.github.io/adsb-to-wdgwars`, which 404s: the repo moved to the
+  Yggdrasil-AI-labs org and GitHub Pages does not redirect old URLs. The live
+  page is `yggdrasil-ai-labs.github.io/adsb-to-wdgwars/`. That dead link sat on
+  the one line telling people who do not want to install anything where to go,
+  so the zero-install path was effectively invisible. Two players spent
+  2026-08-14 trying to upload raw PortaPack `ADSB.TXT` files to the portal
+  without either of them learning the browser converter exists.
+
+  The web section now also spells out the whole no-install route (drag capture
+  in, download the JSON, drag that into the wdgwars.pl upload form, no API key
+  needed) and calls out PortaPack users directly, since a file named
+  `ADSB.TXT` looking like it should upload is the exact trap.
+
+- **Stopped claiming the WDGWars portal natively imports PortaPack Mayhem
+  text.** That note dated from #9 and described the portal rather than this
+  tool. Players reported otherwise on 2026-08-14 and LOCOSP said the same in
+  that thread, so Mayhem text moved into the Muninn column. Which formats the
+  portal accepts is LOCOSP's to change and is not tracked here; the note now
+  says so rather than making a promise on someone else's behalf.
+
 - **One odd leading line no longer misclassifies a whole capture.**
   `detect_format` decided from the first non-blank, non-comment line alone,
   falling through to a generic CSV verdict on that one line with no
