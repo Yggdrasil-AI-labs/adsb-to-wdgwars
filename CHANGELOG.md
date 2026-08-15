@@ -22,12 +22,18 @@ All notable changes to Muninn are documented here. Format follows
   needed) and calls out PortaPack users directly, since a file named
   `ADSB.TXT` looking like it should upload is the exact trap.
 
-- **Stopped claiming the WDGWars portal natively imports PortaPack Mayhem
-  text.** That note dated from #9 and described the portal rather than this
-  tool. Players reported otherwise on 2026-08-14 and LOCOSP said the same in
-  that thread, so Mayhem text moved into the Muninn column. Which formats the
-  portal accepts is LOCOSP's to change and is not tracked here; the note now
-  says so rather than making a promise on someone else's behalf.
+- **Corrected a same-day overreaction about portal Mayhem support.** An
+  earlier commit today moved PortaPack Mayhem text out of the portal's
+  supported list on the strength of two failure reports. That was wrong: the
+  portal does ship Mayhem support (#9, 2026-05-31) and the original note was
+  accurate. Restored, with a note explaining why both things can be true at
+  once. Mayhem's output is not uniform: some H4M firmware writes `Spd:` where
+  stock writes `GS:` and prepends a timestamp column, which is precisely the
+  variant that broke Muninn's own parser until v2.0.16. A format being
+  supported and a particular file being refused are not in conflict when the
+  firmware emits a dialect the importer was not written against. Whether that
+  is the actual cause at the portal end is unconfirmed and is not this repo's
+  to assert.
 
 - **One odd leading line no longer misclassifies a whole capture.**
   `detect_format` decided from the first non-blank, non-comment line alone,

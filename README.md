@@ -24,23 +24,32 @@ Sibling repos in the WDGWars feeder family:
 - [wdgwars-api-tester](https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester). API surface probe
 
 > **Linked by WDGWars as the recommended advanced converter.** The
-> WDGWars portal has its own importer for the common JSON dialects
-> (dump1090 / readsb / tar1090 / Stratux / VRS / Sleipnir), so if
-> your receiver already writes one of those you can drag it straight
-> in and skip Muninn entirely. For everything else. AVR raw Mode-S,
-> Mode-S Beast binary, GDL-90 binary, NDJSON, gzipped tar1090
-> chunks, BaseStation `.sqb`, PortaPack Mayhem text, and the
-> HMAC-signed `/api/upload/` route, the portal links Muninn from
-> `/help`, `/changelog`, and the upload-profile UI as the
-> recommended path.
+> WDGWars portal ships its own importer for the common JSON dialects
+> (dump1090 / readsb / tar1090 / Stratux / VRS / Sleipnir) and the
+> SBS-1 / PortaPack Mayhem text formats, drag-and-drop a file and it
+> imports. For everything else. AVR raw Mode-S, Mode-S Beast binary,
+> GDL-90 binary, NDJSON, gzipped tar1090 chunks, BaseStation `.sqb`,
+> and the HMAC-signed `/api/upload/` route, the portal links Muninn
+> from `/help`, `/changelog`, and the upload-profile UI as the
+> recommended path. If your receiver already speaks a dialect the
+> portal accepts, you can skip Muninn; if not, you're in the right
+> place.
+
+> **PortaPack note (2026-08-14).** Players on **H4M** hardware have
+> reported their `ADSB.TXT` failing to import at the portal even
+> though Mayhem text is a supported format there. A likely cause,
+> unconfirmed at the portal end: Mayhem's output is not uniform.
+> Some H4M firmware labels ground speed `Spd:` where stock Mayhem
+> writes `GS:`, and prepends a `YYYYMMDDHHMMSS` column to each line.
+> Muninn failed on exactly that variant until v2.0.16 (2026-07-19),
+> where every one of 113 aircraft in a real H4M capture decoded with
+> a ground speed of 0 because `Spd:` never matched. Muninn handles
+> both spellings now.
 >
-> Treat that list as a description of Muninn, not a promise about the
-> portal: which formats the portal itself accepts is LOCOSP's to
-> change and is not tracked here. An earlier version of this note
-> listed PortaPack Mayhem text among the formats the portal imports
-> natively. Players reported otherwise on 2026-08-14 and LOCOSP said
-> the same in the same thread, so it has been moved to the Muninn
-> column. If in doubt, convert first, it costs you nothing.
+> So "Mayhem is supported" and "my Mayhem file will not import" can
+> both be true, depending on which firmware wrote the file. If yours
+> is refused, look at a line: `Spd:` or a long leading number means
+> you have the variant. Muninn converts it either way.
 
 **Scope:** Muninn is for **data your own receiver captured**. Aggregator-API
 formats (OpenSky, FlightAware, ADS-B Exchange) are intentionally not
