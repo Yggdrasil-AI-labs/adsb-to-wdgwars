@@ -6,6 +6,8 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-08-15 - Detection looks past the first line; dead web-version link fixed
+
 ### Fixed
 
 - **The README's link to the web version was dead.** It pointed at
