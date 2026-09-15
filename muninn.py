@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.2.2"
+__version__ = "2.2.3"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -159,10 +159,12 @@ _client = gungnir.Client(
 # Re-exported from gungnir so existing call-sites (notably the argparse
 # default for --api-url) keep working without change. Source of truth
 # lives in gungnir; touch it there if the server ever moves. As of
-# gungnir v0.1.2 (pinned in requirements.txt), DEFAULT_API_URL points
-# at /endpoint/upload/ - a server-side alias of /api/upload/ that
-# bypasses Cloudflare's per-IP L7 DDoS rate-limit. ME_API_URL stays
-# on /api/me (single-call, not affected by burst limits).
+# gungnir v0.1.6 (pinned in requirements.txt), BOTH point at
+# /endpoint/* - a server-side alias of /api/* that sits outside the
+# pattern Cloudflare's L7 shield gates during an event. Uploads moved
+# in gungnir v0.1.2, key validation in v0.1.6: a single call cannot
+# trip a burst limit, but it can still meet a shield that is gating the
+# whole /api/* pattern, and a 429 there reads as a bad key.
 DEFAULT_API_URL = gungnir.DEFAULT_API_URL
 ME_API_URL = gungnir.ME_API_URL
 
@@ -548,7 +550,7 @@ def interactive_setup() -> int:
                   file=sys.stderr)
             continue
 
-        print(" Validating key against wdgwars.pl/api/me ...", file=sys.stderr)
+        print(" Validating key against wdgwars.pl/endpoint/me ...", file=sys.stderr)
         rc = check_whoami(key)
         if rc != 0:
             print(" That key was rejected. Try again, or Ctrl+C to cancel.\n",

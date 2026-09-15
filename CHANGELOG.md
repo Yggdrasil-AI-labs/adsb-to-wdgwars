@@ -6,15 +6,19 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-09-15 - Key validation leaves the /api/* pattern
+
 ### Changed
 
-- **gungnir pinned to v0.1.5.** Picks up two fixes to the shared transport,
-  both from a player report: an HTML error page (a portal maintenance window,
-  a proxy, a WAF) is now summarised to one line instead of dumping a DOCTYPE
-  and a stylesheet into the terminal, and a 5xx give-up no longer calls itself
-  a rejection, which used to send people looking at their own data for a fault
-  that was never theirs. Also fixes gungnir self-reporting 0.1.3 in its
-  User-Agent while v0.1.4 was installed.
+- **gungnir pinned to v0.1.6**, which moves key validation from `/api/me` to
+  `/endpoint/me`. Uploads have been on `/endpoint/*` since gungnir v0.1.2;
+  identity was left behind on the reasoning that one call cannot trip a burst
+  limit. It can still meet a Cloudflare L7 shield that is gating the whole
+  `/api/*` pattern, and what comes back then reads to the operator as a bad
+  key rather than as a platform event. Every call Muninn makes is now on one
+  path family. The v0.1.5 pin ships here too, having sat unreleased since
+  2026-08-20: an HTML error page is summarised to one line instead of dumping
+  markup, and a 5xx give-up no longer calls itself a rejection.
 
 ## [2.2.2] - 2026-08-15 - Detection looks past the first line; dead web-version link fixed
 
