@@ -220,6 +220,17 @@ class SkipUnchangedTests(unittest.TestCase):
                          "an unreadable state must cost one redundant "
                          "upload, never a suppressed one")
 
+    def test_wrongly_typed_state_degrades_to_sending(self):
+        # Valid JSON, unusable content. This one gets past json.loads, so it
+        # is the case where a timestamp that isn't a number would otherwise
+        # reach the arithmetic in _prune_sent_state and take the upload down.
+        for bad in ('{"ABC123": "yesterday"}', '["ABC123"]', '"nope"'):
+            with self.subTest(bad=bad):
+                self.state.write_text(bad)
+                self.assertEqual(muninn._load_sent_state(), {})
+                _, send = self._upload([rec("ABC123")])
+                self.assertEqual(send.call_count, 1)
+
     def test_stream_mode_is_exempt(self):
         # Stream mode flushes only the aircraft that changed since the last
         # flush, a finer-grained answer to the same problem. Stacking the
@@ -243,7 +254,7 @@ class SkipUnchangedTests(unittest.TestCase):
                          "snapshot-feeder gate")
         self.assertFalse(self.state.exists())
 
-    def test_state_is_pruned_and_capped(self):
+    def test_state_is_pruned(self):
         now = __import__("time").time()
         state = {f"{i:06X}": now - muninn.SENT_TTL_SECONDS - 10
                  for i in range(5)}
@@ -251,12 +262,6 @@ class SkipUnchangedTests(unittest.TestCase):
         muninn._save_sent_state(state)
         pruned = muninn._prune_sent_state(muninn._load_sent_state(), now)
         self.assertEqual(list(pruned), ["FRESH1"])
-
-        big = {f"{i:06X}": now - i for i in range(muninn.SENT_STATE_MAX_ENTRIES
-                                                 + 50)}
-        muninn._save_sent_state(big)
-        self.assertEqual(len(muninn._load_sent_state()),
-                         muninn.SENT_STATE_MAX_ENTRIES)
 
 
 if __name__ == "__main__":

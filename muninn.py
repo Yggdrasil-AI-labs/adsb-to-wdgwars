@@ -1733,10 +1733,6 @@ def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 # zero lost score while taking an idle overnight feeder from four wasted syncs
 # an hour down to one.
 SENT_TTL_SECONDS = 3600
-# Pruning by TTL bounds this naturally; the cap is only a guard against a
-# pathological feeder seeing more distinct aircraft in one hour than any real
-# antenna can.
-SENT_STATE_MAX_ENTRIES = 50_000
 
 _sent_state_write_warned = False
 
@@ -1751,27 +1747,15 @@ def _load_sent_state() -> dict[str, float]:
     suppresses one."""
     try:
         data = json.loads(_sent_state_path().read_text())
+        return {str(icao): float(ts) for icao, ts in data.items()}
     except Exception:
         return {}
-    if not isinstance(data, dict):
-        return {}
-    out: dict[str, float] = {}
-    for icao, ts in data.items():
-        try:
-            out[str(icao)] = float(ts)
-        except (TypeError, ValueError):
-            continue
-    return out
 
 
 def _save_sent_state(state: dict[str, float]) -> None:
-    """Persist the map, newest entries first if we have to drop any. A failure
-    here must never take down an upload loop, so it warns once and moves on."""
+    """Persist the map. A failure here must never take down an upload loop,
+    so it warns once and moves on."""
     global _sent_state_write_warned
-    if len(state) > SENT_STATE_MAX_ENTRIES:
-        keep = sorted(state.items(), key=lambda kv: kv[1],
-                      reverse=True)[:SENT_STATE_MAX_ENTRIES]
-        state = dict(keep)
     path = _sent_state_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1838,24 +1822,19 @@ def _server_disagrees_with_state(sent_at: float, expected_new: int,
     rather than compare a total against one chunk's counters."""
     if not single_chunk:
         return False
+    # One guard for the lot: a missing file, a missing key and a malformed
+    # value all mean the same thing here, which is that we learned nothing
+    # about this upload and must not act. Note the absent-counter case has
+    # to read as False rather than 0, or a server that told us nothing
+    # would look like a server reporting zero imports.
     try:
         h = gungnir.hwm.read("muninn") or {}
+        # Anything older than this upload is a different run's watermark.
+        if float(h["last_upload_ts"]) < sent_at:
+            return False
+        return int(h["counters"]["aircraft_imported"]) > expected_new
     except Exception:
         return False
-    # Anything older than this upload is a different run's watermark.
-    try:
-        if float(h.get("last_upload_ts") or 0) < sent_at:
-            return False
-    except (TypeError, ValueError):
-        return False
-    counters = h.get("counters")
-    if not isinstance(counters, dict) or "aircraft_imported" not in counters:
-        return False
-    try:
-        imported = int(counters.get("aircraft_imported") or 0)
-    except (TypeError, ValueError):
-        return False
-    return imported > expected_new
 
 
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
