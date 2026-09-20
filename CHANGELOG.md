@@ -30,13 +30,33 @@ All notable changes to Muninn are documented here. Format follows
     Re-sending each ICAO at most once an hour holds the worst case at zero
     lost score while taking an idle overnight feeder from four wasted syncs
     an hour to one.
-  - **The server wins.** gungnir already writes the server's own counters to
-    `hwm.json`. If an upload imports more aircraft than Muninn classified as
-    new, the local state is over-suppressing, so it is dropped rather than
-    trusted. This can only fire on an upload that was made; a fully
-    suppressed payload has nothing to contradict it, which is the other
-    reason the TTL exists.
+  - **Only what the server confirms is recorded as sent.** gungnir already
+    writes the server's own counters to `hwm.json`, and Muninn records a
+    payload only when those counters account for all of it. An upload it
+    cannot verify — no watermark, a watermark from another run, or a
+    multi-chunk upload, where `hwm.record` keeps only the last chunk —
+    records nothing and says so once. That costs a redundant upload next
+    cycle, which is what every version before this one did anyway; the
+    alternative is suppressing an aircraft the server never took.
+
+    This matters because `rc` is 0 whenever *any* counter is non-zero, so a
+    server that quietly dropped part of a payload still looks like success.
+    When the counters account for fewer aircraft than were sent, the state
+    is left alone and the rest retry next sync.
+
+    In the other direction, an upload that imports *more* than Muninn
+    classified as new means the state is over-suppressing, so it is dropped.
+    That can only fire on an upload that was made; a fully suppressed
+    payload has nothing to contradict it, which is the other reason the TTL
+    exists.
   - **Unknowns upload.** A record with no readable ICAO is never suppressed.
+
+  The state file is written to a temp file and renamed over the target.
+  `--schedule` can install a watch daemon and a periodic task against one
+  config dir, and a reader must never see a half-written file whatever the
+  writers do to each other. Concurrent writers can still lose each other's
+  entries, last write wins; the cost of a lost entry is one redundant
+  upload.
 
   `--no-skip-unchanged` restores the old always-upload behavior. `--dry-run`
   neither reads nor writes the state.

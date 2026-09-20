@@ -1735,6 +1735,22 @@ def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 SENT_TTL_SECONDS = 3600
 
 _sent_state_write_warned = False
+_sent_state_unverified_warned = False
+
+
+def _warn_unverified_once() -> None:
+    """Say so the first time we cannot confirm what an upload did.
+
+    A gate that quietly stops gating is worse than one that never existed,
+    because nothing distinguishes it from a feeder that simply always has
+    new aircraft."""
+    global _sent_state_unverified_warned
+    if not _sent_state_unverified_warned:
+        print(f"{_INFO()} could not read the server's counters for this "
+              f"upload, so nothing was recorded as sent (multi-chunk "
+              f"uploads cannot be verified this way). Syncs will not be "
+              f"skipped while this is the case.", file=sys.stderr)
+        _sent_state_unverified_warned = True
 
 
 def _sent_state_path() -> Path:
@@ -1753,14 +1769,25 @@ def _load_sent_state() -> dict[str, float]:
 
 
 def _save_sent_state(state: dict[str, float]) -> None:
-    """Persist the map. A failure here must never take down an upload loop,
-    so it warns once and moves on."""
+    """Persist the map atomically. A failure here must never take down an
+    upload loop, so it warns once and moves on.
+
+    Written to a temp file in the same directory and renamed over the target,
+    because --schedule can install a watch daemon and a periodic task against
+    one config dir: a reader must never see a half-written file, whatever the
+    writers do to each other."""
     global _sent_state_write_warned
     path = _sent_state_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state, indent=2))
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(state, indent=2))
+        os.replace(tmp, path)
     except OSError as e:
+        try:
+            tmp.unlink(missing_ok=True)
+        except (OSError, UnboundLocalError):
+            pass
         if not _sent_state_write_warned:
             print(f"[muninn] WARNING: could not persist already-sent state to "
                   f"{path} ({e}); every cycle will upload in full",
@@ -1807,34 +1834,35 @@ def _mark_sent(records: list[dict], now: float) -> None:
     _save_sent_state(state)
 
 
-def _server_disagrees_with_state(sent_at: float, expected_new: int,
-                                 single_chunk: bool) -> bool:
-    """True when the server imported more aircraft than we classified as new.
+def _upload_outcome(sent_at: float, single_chunk: bool) -> tuple[int, int] | None:
+    """``(imported, already_seen)`` for the upload that just happened, or None
+    when we cannot establish what the server did with it.
 
-    gungnir already writes the server's own counters to ``hwm.json`` after each
-    successful chunk, so we can check our bookkeeping against the only
-    authority that matters instead of trusting it. If the server counted
-    aircraft we had written off as already-sent, our state is over-suppressing
-    and the caller drops it.
+    gungnir writes the server's own counters to ``hwm.json`` after each
+    successful chunk, which is the only authority on what actually landed.
+    None is not "nothing happened", it is "we did not learn", and the caller
+    must treat the two differently -- recording a payload as sent on the
+    strength of an unread response is how aircraft go missing.
 
-    ``hwm.record`` runs per chunk and keeps only the last one, so this is only
-    meaningful for a single-chunk upload; multi-chunk uploads return False
-    rather than compare a total against one chunk's counters."""
+    ``hwm.record`` runs per chunk and keeps only the last, so a multi-chunk
+    upload cannot be checked against its own total and returns None. One guard
+    covers the rest: a missing file, a missing key and a malformed value all
+    mean the same thing here."""
     if not single_chunk:
-        return False
-    # One guard for the lot: a missing file, a missing key and a malformed
-    # value all mean the same thing here, which is that we learned nothing
-    # about this upload and must not act. Note the absent-counter case has
-    # to read as False rather than 0, or a server that told us nothing
-    # would look like a server reporting zero imports.
+        return None
     try:
         h = gungnir.hwm.read("muninn") or {}
         # Anything older than this upload is a different run's watermark.
         if float(h["last_upload_ts"]) < sent_at:
-            return False
-        return int(h["counters"]["aircraft_imported"]) > expected_new
+            return None
+        c = h["counters"]
+        imported = int(c["aircraft_imported"] if "aircraft_imported" in c
+                       else c["imported"])
+        already = int(c["aircraft_already_seen"] if "aircraft_already_seen" in c
+                      else c["already_seen"])
+        return imported, already
     except Exception:
-        return False
+        return None
 
 
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
@@ -1880,8 +1908,13 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     )
 
     if skip_unchanged and not dry_run and rc == 0 and records:
-        if _server_disagrees_with_state(now, len(new_records),
-                                        len(records) <= batch_size):
+        outcome = _upload_outcome(now, len(records) <= batch_size)
+        if outcome is None:
+            # We do not know what the server did with this payload, so we
+            # record nothing. The cost is that the next cycle uploads in
+            # full, which is exactly what every version before this one did.
+            _warn_unverified_once()
+        elif outcome[0] > len(new_records):
             # The server scored aircraft we had written off. Our state is
             # wrong in the one direction that costs him points, so throw it
             # away and let the next cycle upload in full.
@@ -1889,8 +1922,18 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
                   f"clearing already-sent state so the next sync uploads in "
                   f"full.", file=sys.stderr)
             _save_sent_state({})
-        else:
+        elif sum(outcome) == len(records):
             _mark_sent(records, now)
+        else:
+            # The counters account for fewer aircraft than we sent, so the
+            # server dropped some without saying which. rc is still 0
+            # because gungnir only fails an upload when EVERY counter is
+            # zero. Marking the payload sent here would suppress the
+            # dropped ones for a full TTL; leaving the state alone retries
+            # them next cycle.
+            print(f"{_INFO()} the server accounted for {sum(outcome)} of "
+                  f"{len(records)} aircraft; not recording this payload as "
+                  f"sent so the rest retry next sync.", file=sys.stderr)
     return rc
 
 

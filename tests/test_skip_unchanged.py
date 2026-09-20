@@ -50,17 +50,31 @@ class SkipUnchangedTests(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         muninn._sent_state_write_warned = False
-        # Default: the server reports nothing, so the self-heal check is
-        # inert unless a test says otherwise.
+        muninn._sent_state_unverified_warned = False
+        # Isolation floor: no test may read the operator's real hwm.json.
+        # _upload's own patch overrides this per call.
         h = mock.patch.object(muninn.gungnir.hwm, "read", return_value=None)
         h.start()
         self.addCleanup(h.stop)
         self.addCleanup(self._tmp.cleanup)
 
-    def _upload(self, records, **kw):
-        with mock.patch.object(muninn.gungnir.transport, "send",
-                               return_value=0) as send:
-            rc = muninn.upload(records, "key", "https://example.invalid", **kw)
+    def _upload(self, records, hwm="auto", **kw):
+        """One upload with the transport stubbed.
+
+        ``hwm`` is what gungnir would have written after the send. The
+        default is a server that accounted for the whole payload, because
+        that is what a successful single-chunk upload looks like and the
+        gate records nothing without it. Pass an explicit dict, or None for
+        "no watermark", to test the other paths."""
+        if hwm == "auto":
+            hwm = {"last_upload_ts": __import__("time").time() + 5,
+                   "counters": {"aircraft_imported": 0,
+                                "aircraft_already_seen": len(records)}}
+        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
+            with mock.patch.object(muninn.gungnir.transport, "send",
+                                   return_value=0) as send:
+                rc = muninn.upload(records, "key", "https://example.invalid",
+                                   **kw)
         return rc, send
 
     def test_repeat_payload_skips_the_post(self):
@@ -156,9 +170,9 @@ class SkipUnchangedTests(unittest.TestCase):
         self._upload([rec("ABC123")])
         records = [rec("ABC123"), rec("DEF456")]
         hwm = {"last_upload_ts": __import__("time").time() + 5,
-               "counters": {"aircraft_imported": 2}}
-        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
-            _, send = self._upload(records)
+               "counters": {"aircraft_imported": 2,
+                            "aircraft_already_seen": 0}}
+        _, send = self._upload(records, hwm=hwm)
         self.assertEqual(send.call_count, 1)
         self.assertEqual(muninn._load_sent_state(), {},
                          "a server that scores what we called stale must "
@@ -173,9 +187,9 @@ class SkipUnchangedTests(unittest.TestCase):
         self._upload([rec("ABC123")])
         records = [rec("ABC123"), rec("DEF456")]
         hwm = {"last_upload_ts": __import__("time").time() + 5,
-               "counters": {"aircraft_imported": 1}}
-        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
-            self._upload(records)
+               "counters": {"aircraft_imported": 1,
+                            "aircraft_already_seen": 1}}
+        self._upload(records, hwm=hwm)
         self.assertIn("DEF456", muninn._load_sent_state(),
                       "the server agreeing must not clear the state")
 
@@ -187,27 +201,87 @@ class SkipUnchangedTests(unittest.TestCase):
         self._upload([rec("ABC123")])
         records = [rec("ABC123"), rec("DEF456"), rec("777AAA")]
         hwm = {"last_upload_ts": __import__("time").time() + 5,
-               "counters": {"aircraft_imported": 99}}
-        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
-            self._upload(records, batch_size=1)
-        self.assertTrue(muninn._load_sent_state(),
-                        "a per-chunk watermark must not be read as the "
-                        "total for the whole upload")
+               "counters": {"aircraft_imported": 99,
+                            "aircraft_already_seen": 0}}
+        self._upload(records, hwm=hwm, batch_size=1)
+        state = muninn._load_sent_state()
+        self.assertEqual(list(state), ["ABC123"],
+                         "a per-chunk watermark tells us nothing about the "
+                         "whole upload: neither clear the state nor add to it")
 
-    def test_stale_hwm_from_an_earlier_run_is_ignored(self):
-        records = [rec("ABC123")]
-        hwm = {"last_upload_ts": 1.0, "counters": {"aircraft_imported": 99}}
-        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
-            self._upload(records)
+    def test_unverifiable_upload_records_nothing(self):
+        # No watermark at all, and a watermark predating this upload (some
+        # other run's), both mean the same thing: we did not learn what the
+        # server did, so nothing may be recorded as sent.
+        for label, hwm in (
+                ("missing", None),
+                ("stale", {"last_upload_ts": 1.0,
+                           "counters": {"aircraft_imported": 99,
+                                        "aircraft_already_seen": 0}})):
+            with self.subTest(hwm=label):
+                self.state.unlink(missing_ok=True)
+                records = [rec("ABC123")]
+                self._upload(records, hwm=hwm)
+                self.assertEqual(muninn._load_sent_state(), {})
+                _, send = self._upload(records, hwm=hwm)
+                self.assertEqual(send.call_count, 1,
+                                 "an unverified upload must not suppress the "
+                                 "next one")
+
+    def test_stale_watermark_does_not_clear_existing_state(self):
+        self._upload([rec("ABC123")])
+        hwm = {"last_upload_ts": 1.0,
+               "counters": {"aircraft_imported": 99,
+                            "aircraft_already_seen": 0}}
+        self._upload([rec("ABC123"), rec("DEF456")], hwm=hwm)
         self.assertIn("ABC123", muninn._load_sent_state(),
                       "a watermark predating this upload is a different "
                       "run's and must not clear the state")
 
+    def test_partially_accounted_payload_is_not_marked_sent(self):
+        # rc is 0 whenever ANY counter is non-zero, so a server that quietly
+        # dropped some aircraft still looks like success. Recording the whole
+        # payload here would suppress the dropped ones for a full TTL.
+        records = [rec("ABC123"), rec("DEF456"), rec("777AAA")]
+        hwm = {"last_upload_ts": __import__("time").time() + 5,
+               "counters": {"aircraft_imported": 1,
+                            "aircraft_already_seen": 1}}
+        self._upload(records, hwm=hwm)
+        self.assertEqual(muninn._load_sent_state(), {},
+                         "2 of 3 accounted for: the payload must retry")
+        _, send = self._upload(records, hwm=hwm)
+        self.assertEqual(send.call_count, 1)
+
+    def test_state_file_is_replaced_atomically(self):
+        # A concurrent reader must never see a half-written file, so the
+        # write lands on a temp path and is renamed over the target.
+        seen = []
+        real = Path.write_text
+
+        def spy(self_path, *a, **kw):
+            seen.append(Path(self_path).name)
+            return real(self_path, *a, **kw)
+
+        with mock.patch.object(Path, "write_text", spy):
+            muninn._save_sent_state({"ABC123": 1.0})
+        self.assertTrue(seen and seen[0].endswith(".tmp"),
+                        f"expected a temp-file write, got {seen}")
+        self.assertEqual(muninn._load_sent_state(), {"ABC123": 1.0})
+        self.assertEqual(list(self.state.parent.glob("*.tmp")), [],
+                         "no temp file may be left behind")
+
     def test_failed_upload_records_nothing(self):
+        # The watermark here would account for the payload in full, so the
+        # only thing standing between a failed upload and a recorded one is
+        # the rc check.
         records = [rec("ABC123")]
-        with mock.patch.object(muninn.gungnir.transport, "send",
-                               return_value=1):
-            rc = muninn.upload(records, "key", "https://example.invalid")
+        hwm = {"last_upload_ts": __import__("time").time() + 5,
+               "counters": {"aircraft_imported": 1,
+                            "aircraft_already_seen": 0}}
+        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
+            with mock.patch.object(muninn.gungnir.transport, "send",
+                                   return_value=1):
+                rc = muninn.upload(records, "key", "https://example.invalid")
         self.assertEqual(rc, 1)
         self.assertFalse(self.state.exists(),
                          "a failed upload must be retried, not marked sent")
