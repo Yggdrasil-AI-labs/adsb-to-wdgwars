@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.2.3"
+__version__ = "2.3.0"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1719,8 +1719,142 @@ def _OK() -> str:    return _tag("[OK]", "1;32")     # bold green
 def _FAIL() -> str:  return _tag("[FAIL]", "1;31")   # bold red
 def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 
+# ── Already-sent tracking ───────────────────────────────────────────────────
+# A fixed station on a timer re-sends the same aircraft every cycle. The server
+# counts those as syncs that carried nothing new and, since the Uplink page
+# landed, says so out loud ("N syncs in a row with nothing new in them"). The
+# aircraft were genuinely already on file, so the nag is correct -- the fix is
+# to not make the request at all when we know every ICAO in the payload went up
+# recently.
+#
+# TTL, not "forever": an aircraft already on file scores nothing on re-upload
+# TODAY, but that is the server's rule to change, not ours to assume in
+# perpetuity. Re-sending each ICAO at most once an hour keeps the worst case at
+# zero lost score while taking an idle overnight feeder from four wasted syncs
+# an hour down to one.
+SENT_TTL_SECONDS = 3600
+# Pruning by TTL bounds this naturally; the cap is only a guard against a
+# pathological feeder seeing more distinct aircraft in one hour than any real
+# antenna can.
+SENT_STATE_MAX_ENTRIES = 50_000
+
+_sent_state_write_warned = False
+
+
+def _sent_state_path() -> Path:
+    return _config_dir() / "sent-aircraft.json"
+
+
+def _load_sent_state() -> dict[str, float]:
+    """Read the ICAO -> last-sent-epoch map. Any problem reading it degrades to
+    "we have sent nothing", which costs one redundant upload and never
+    suppresses one."""
+    try:
+        data = json.loads(_sent_state_path().read_text())
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, float] = {}
+    for icao, ts in data.items():
+        try:
+            out[str(icao)] = float(ts)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _save_sent_state(state: dict[str, float]) -> None:
+    """Persist the map, newest entries first if we have to drop any. A failure
+    here must never take down an upload loop, so it warns once and moves on."""
+    global _sent_state_write_warned
+    if len(state) > SENT_STATE_MAX_ENTRIES:
+        keep = sorted(state.items(), key=lambda kv: kv[1],
+                      reverse=True)[:SENT_STATE_MAX_ENTRIES]
+        state = dict(keep)
+    path = _sent_state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2))
+    except OSError as e:
+        if not _sent_state_write_warned:
+            print(f"[muninn] WARNING: could not persist already-sent state to "
+                  f"{path} ({e}); every cycle will upload in full",
+                  file=sys.stderr)
+            _sent_state_write_warned = True
+
+
+def _prune_sent_state(state: dict[str, float], now: float,
+                      ttl: float = SENT_TTL_SECONDS) -> dict[str, float]:
+    return {icao: ts for icao, ts in state.items() if now - ts < ttl}
+
+
+def _unsent_records(records: list[dict], state: dict[str, float], now: float,
+                    ttl: float = SENT_TTL_SECONDS) -> list[dict]:
+    """The subset of ``records`` whose ICAO we have not sent inside the TTL.
+
+    A record with no ICAO counts as unsent: we would rather upload something
+    redundant than silently drop an aircraft over a bookkeeping key we could
+    not read."""
+    out = []
+    for r in records:
+        icao = r.get("icao")
+        if not icao:
+            out.append(r)
+            continue
+        last = state.get(str(icao))
+        if last is None or now - last >= ttl:
+            out.append(r)
+    return out
+
+
+def _mark_sent(records: list[dict], now: float) -> None:
+    state = _prune_sent_state(_load_sent_state(), now)
+    for r in records:
+        icao = r.get("icao")
+        if icao:
+            state[str(icao)] = now
+    _save_sent_state(state)
+
+
+def _server_disagrees_with_state(sent_at: float, expected_new: int,
+                                 single_chunk: bool) -> bool:
+    """True when the server imported more aircraft than we classified as new.
+
+    gungnir already writes the server's own counters to ``hwm.json`` after each
+    successful chunk, so we can check our bookkeeping against the only
+    authority that matters instead of trusting it. If the server counted
+    aircraft we had written off as already-sent, our state is over-suppressing
+    and the caller drops it.
+
+    ``hwm.record`` runs per chunk and keeps only the last one, so this is only
+    meaningful for a single-chunk upload; multi-chunk uploads return False
+    rather than compare a total against one chunk's counters."""
+    if not single_chunk:
+        return False
+    try:
+        h = gungnir.hwm.read("muninn") or {}
+    except Exception:
+        return False
+    # Anything older than this upload is a different run's watermark.
+    try:
+        if float(h.get("last_upload_ts") or 0) < sent_at:
+            return False
+    except (TypeError, ValueError):
+        return False
+    counters = h.get("counters")
+    if not isinstance(counters, dict) or "aircraft_imported" not in counters:
+        return False
+    try:
+        imported = int(counters.get("aircraft_imported") or 0)
+    except (TypeError, ValueError):
+        return False
+    return imported > expected_new
+
+
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
-           batch_size: int = 500, dry_run: bool = False) -> int:
+           batch_size: int = 500, dry_run: bool = False,
+           skip_unchanged: bool = True) -> int:
     """POST ``records`` to the wdgwars.pl signed-JSON endpoint.
 
     Behavior comes from gungnir as of v2.0:
@@ -1735,14 +1869,44 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
 
     Wire shape (HMAC envelope) is byte-identical to v1.11.1, verified
     by ``gungnir/tests/test_muninn_parity.py``.
+
+    ``skip_unchanged`` suppresses the request entirely when every ICAO in
+    ``records`` was already uploaded inside SENT_TTL_SECONDS. Disable it with
+    --no-skip-unchanged. A dry run never consults or updates the state.
     """
-    return gungnir.transport.send(
+    now = time.time()
+    new_records = records
+    if skip_unchanged and not dry_run and records:
+        state = _prune_sent_state(_load_sent_state(), now)
+        new_records = _unsent_records(records, state, now)
+        if not new_records:
+            print(f"{_INFO()} nothing new since the last upload "
+                  f"({len(records)} aircraft, all sent within the last "
+                  f"{int(SENT_TTL_SECONDS // 60)} min). Skipping this sync.",
+                  file=sys.stderr)
+            return 0
+
+    rc = gungnir.transport.send(
         "muninn", __version__, api_url, api_key,
         aircraft=records,
         batch_size=batch_size,
         dry_run=dry_run,
         user_agent_extra=GITHUB_URL,
     )
+
+    if skip_unchanged and not dry_run and rc == 0 and records:
+        if _server_disagrees_with_state(now, len(new_records),
+                                        len(records) <= batch_size):
+            # The server scored aircraft we had written off. Our state is
+            # wrong in the one direction that costs him points, so throw it
+            # away and let the next cycle upload in full.
+            print(f"{_INFO()} the server accepted more aircraft than expected; "
+                  f"clearing already-sent state so the next sync uploads in "
+                  f"full.", file=sys.stderr)
+            _save_sent_state({})
+        else:
+            _mark_sent(records, now)
+    return rc
 
 
 # ── Watch mode ──────────────────────────────────────────────────────────────
@@ -1885,7 +2049,9 @@ def watch_dir(watch_dir: Path, args) -> int:
                     if args.upload and records:
                         rc = upload(records, api_key, args.api_url,
                                    batch_size=args.batch_size,
-                                   dry_run=args.dry_run)
+                                   dry_run=args.dry_run,
+                                   skip_unchanged=not getattr(
+                                       args, "no_skip_unchanged", False))
                         if rc != 0:
                             print(f"[watch]   upload failed. Will retry next cycle",
                                   file=sys.stderr)
@@ -2025,8 +2191,14 @@ def _flush_stream_records(rows: dict[str, dict], dirty: set[str],
         out_path = out_dir / f"stream-{int(time.time())}.wdgwars.json"
         out_path.write_text(json.dumps(_to_dump1090_fa(records), indent=2))
     if args.upload:
+        # Deliberately not gated by the already-sent TTL. Stream mode already
+        # flushes only the aircraft that changed since the last flush, which
+        # is a finer-grained answer to "don't send what the server has" than
+        # an hourly ICAO window -- and stacking the two would suppress live
+        # position updates for an aircraft that stays in view.
         rc = upload(records, api_key, args.api_url,
-                   batch_size=args.batch_size, dry_run=args.dry_run)
+                   batch_size=args.batch_size, dry_run=args.dry_run,
+                   skip_unchanged=False)
         if rc != 0:
             print(f"[stream]   upload failed for this batch, those aircraft "
                   f"stay dirty and retry next flush", file=sys.stderr)
@@ -3112,7 +3284,8 @@ def _do_upload(records: list[dict], args) -> int:
                   "file(s) were still written.", file=sys.stderr)
             return 0
     return upload(records, key, args.api_url,
-                  batch_size=args.batch_size, dry_run=args.dry_run)
+                  batch_size=args.batch_size, dry_run=args.dry_run,
+                  skip_unchanged=not getattr(args, "no_skip_unchanged", False))
 
 
 
@@ -3490,6 +3663,13 @@ def main() -> int:
                          "parser understands your decoder's output before "
                          "wiring it into a watch loop or schedule. Mirrors "
                          "Heimdall's --preview for cross-tool consistency.")
+    ap.add_argument("--no-skip-unchanged", action="store_true",
+                    help="upload every cycle even when every aircraft in it "
+                         "was already sent in the last hour. By default a "
+                         "sync that would carry nothing new is skipped "
+                         "instead of sent, which is what the server's "
+                         "\"syncs in a row with nothing new\" warning is "
+                         "asking for.")
     ap.add_argument("--dry-run", action="store_true",
                     help="with --upload, build the request but don't send")
     ap.add_argument("--key", help="WDGWars API key (overrides $WDGWARS_API_KEY)")

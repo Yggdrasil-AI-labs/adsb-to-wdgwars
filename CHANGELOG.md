@@ -6,6 +6,41 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-20 - A sync that carries nothing new is no longer sent
+
+### Added
+
+- **Muninn now skips an upload when the server already has everything in it.**
+  A fixed station on a timer re-sends the same aircraft every cycle, and until
+  now every one of those cycles became a POST that imported nothing. The
+  WDGWars Uplink page started naming this out loud ("your device has sent N
+  syncs in a row with nothing new in them"), and it was right: a feeder
+  reported a streak of 28, which at his 15-minute interval is a seven-hour
+  overnight window, not a fault.
+
+  Muninn keeps an ICAO-to-last-sent map in its config dir and suppresses the
+  request when every aircraft in the payload went up within the last hour.
+  When anything is new the full snapshot is sent exactly as before, so
+  scoring on a real upload is unchanged.
+
+  Three deliberate limits:
+
+  - **It expires.** An aircraft already on file scores nothing on re-upload
+    today, but that is the server's rule and not ours to assume forever.
+    Re-sending each ICAO at most once an hour holds the worst case at zero
+    lost score while taking an idle overnight feeder from four wasted syncs
+    an hour to one.
+  - **The server wins.** gungnir already writes the server's own counters to
+    `hwm.json`. If an upload imports more aircraft than Muninn classified as
+    new, the local state is over-suppressing, so it is dropped rather than
+    trusted. This can only fire on an upload that was made; a fully
+    suppressed payload has nothing to contradict it, which is the other
+    reason the TTL exists.
+  - **Unknowns upload.** A record with no readable ICAO is never suppressed.
+
+  `--no-skip-unchanged` restores the old always-upload behavior. `--dry-run`
+  neither reads nor writes the state.
+
 ## [2.2.3] - 2026-09-15 - Key validation leaves the /api/* pattern
 
 ### Changed

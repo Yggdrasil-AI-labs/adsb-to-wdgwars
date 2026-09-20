@@ -223,6 +223,10 @@ Generate a key just for Muninn and give it a name, rather than reusing one you h
 
 By configuring a key you're authorising Muninn to upload the captures you give it to WDGWars under your own account. It won't ask again per upload. Use `--preview` or `--dry-run` to see exactly what would be sent before you commit to it.
 
+### Quiet skies don't cost a sync
+
+If you run on a timer, your snapshots overnight are mostly the same aircraft you already uploaded. Muninn remembers which ICAOs it sent and skips the upload entirely when a cycle would carry nothing new, which is what the Uplink page's "syncs in a row with nothing new in them" warning is asking for. The memory expires after an hour, so nothing is ever suppressed permanently, and the moment a new aircraft shows up the full snapshot goes out as normal. Pass `--no-skip-unchanged` if you would rather send every cycle regardless.
+
 ---
 
 ## Running on a schedule
@@ -376,6 +380,8 @@ Notes on `.sqb`:
 --whoami           validate your stored API key and show account stats
 --no-save          with --upload, skip writing the local JSON file
 --dry-run          with --upload, build the request but don't send
+--no-skip-unchanged  upload every cycle even when every aircraft in it was
+                   already sent in the last hour (default: skip that sync)
 --key KEY          one-shot override of the stored API key
 --api-url URL      override the upload endpoint
 --batch-size N     aircraft per upload chunk (default: 1000)
