@@ -128,6 +128,21 @@ class SkipUnchangedTests(unittest.TestCase):
         self.assertEqual(send.call_count, 1)
         self.assertFalse(self.state.exists())
 
+    def test_flag_off_sends_even_with_state_already_recorded(self):
+        # The half that matters to someone reaching for the escape hatch:
+        # they already have state from earlier runs and want this cycle to
+        # go out regardless. Asserting only that the flag records no state
+        # (above) passes even if the flag were ignored on the skip branch.
+        records = [rec("ABC123")]
+        self._upload(records)
+        _, send = self._upload(records)
+        self.assertEqual(send.call_count, 0, "state primed")
+
+        _, send = self._upload(records, skip_unchanged=False)
+        self.assertEqual(send.call_count, 1,
+                         "--no-skip-unchanged must override existing state, "
+                         "not merely decline to add to it")
+
     def test_server_import_count_overrides_our_state(self):
         # ABC123 is already on record, so a payload of both counts as one
         # new aircraft. The server then reports importing two: something we
@@ -150,6 +165,34 @@ class SkipUnchangedTests(unittest.TestCase):
                          "clear the state, not be overruled by it")
         _, send = self._upload(records)
         self.assertEqual(send.call_count, 1)
+
+    def test_server_agreeing_exactly_keeps_the_state(self):
+        # imported == expected_new is the server agreeing with us. Only a
+        # count ABOVE what we classified as new means we suppressed
+        # something real, so equality must not throw the state away.
+        self._upload([rec("ABC123")])
+        records = [rec("ABC123"), rec("DEF456")]
+        hwm = {"last_upload_ts": __import__("time").time() + 5,
+               "counters": {"aircraft_imported": 1}}
+        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
+            self._upload(records)
+        self.assertIn("DEF456", muninn._load_sent_state(),
+                      "the server agreeing must not clear the state")
+
+    def test_multi_chunk_upload_does_not_trigger_the_self_heal(self):
+        # gungnir's hwm.record runs per chunk and keeps only the last one,
+        # so on a multi-chunk upload its counters describe a fraction of
+        # what we sent. Comparing a total against that fraction would clear
+        # the state on every large upload.
+        self._upload([rec("ABC123")])
+        records = [rec("ABC123"), rec("DEF456"), rec("777AAA")]
+        hwm = {"last_upload_ts": __import__("time").time() + 5,
+               "counters": {"aircraft_imported": 99}}
+        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
+            self._upload(records, batch_size=1)
+        self.assertTrue(muninn._load_sent_state(),
+                        "a per-chunk watermark must not be read as the "
+                        "total for the whole upload")
 
     def test_stale_hwm_from_an_earlier_run_is_ignored(self):
         records = [rec("ABC123")]

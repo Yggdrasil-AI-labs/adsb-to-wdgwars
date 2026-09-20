@@ -1795,7 +1795,13 @@ def _unsent_records(records: list[dict], state: dict[str, float], now: float,
 
     A record with no ICAO counts as unsent: we would rather upload something
     redundant than silently drop an aircraft over a bookkeeping key we could
-    not read."""
+    not read.
+
+    The TTL comparison here is defensive. Expiry is actually enforced by the
+    ``_prune_sent_state`` call the only caller makes on load, so a mutation
+    test can remove this clause without any test noticing -- it earns its
+    place by keeping the function correct for a caller that hands it an
+    unpruned state, not by being the mechanism."""
     out = []
     for r in records:
         icao = r.get("icao")
