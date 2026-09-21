@@ -49,3 +49,7 @@ api.key
 # (and by tests/fixtures/build_sample_sqb.py) - tracking it meant every test
 # run dirtied the tree; same rule as the generated web parser above.
 tests/fixtures/sample.sqb
+
+# RTK leftovers. The hook that wrote these was removed 2026-09-13; the
+# db carries local paths and has no business in a public repo.
+rtk/
