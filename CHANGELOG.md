@@ -6,6 +6,31 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-09-21 - Say so when the pinned gungnir is not the one running
+
+### Added
+
+- **Muninn now warns at startup when the installed gungnir is older than the
+  release it pins.** `requirements.txt` names an exact gungnir so a fresh
+  install runs the bytes this version was tested against, but nothing
+  enforced that at runtime and an older copy already in `site-packages` wins
+  silently.
+
+  Found the hard way on 2026-09-20: a machine had gungnir 0.1.0 against a
+  v0.1.6 pin. 0.1.0 has no `check_deliberate_skip`, so every re-upload of a
+  payload the server had already accepted was reported as a failed upload,
+  43 of 109 runs in one August sample, each a failed unit and a health
+  alert. The symptom reads as a server fault and cost hours to trace back to
+  an import path, so the warning names the directory gungnir was imported
+  from: which copy is loaded is the actual question when this happens.
+
+  It warns and continues rather than exiting. Our opinion of someone's
+  `site-packages` should not be the thing that stops their feeder uploading,
+  and an unreadable version on either side stays silent rather than
+  guessing. A test asserts `REQUIRED_GUNGNIR` and the `requirements.txt` pin
+  name the same release, because a guard that drifts from the pin it
+  enforces is worse than none.
+
 ## [2.3.1] - 2026-09-20 - The gate actually engages
 
 ### Fixed

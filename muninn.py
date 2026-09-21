@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -136,6 +136,43 @@ except ModuleNotFoundError:
             file=_sys.stderr,
         )
     _sys.exit(1)
+
+# The gungnir release this Muninn was tested against, kept in step with the
+# pin in requirements.txt. That pin exists so a fresh install runs the bytes
+# we tested, but nothing enforced it at runtime, and an older copy already
+# sitting in site-packages wins silently.
+#
+# 2026-09-20: this machine ran gungnir 0.1.0 against a v0.1.6 pin for weeks.
+# 0.1.0 lacks check_deliberate_skip, so every re-upload of a payload the
+# server had already seen was reported as a failed upload -- 43 of 109 runs
+# in one August sample, each one a failed unit and a health alert. The
+# symptom looks like a server problem and costs hours to trace back to an
+# import. One line of output at startup is cheaper than that hunt.
+REQUIRED_GUNGNIR = "0.1.6"
+
+
+def _check_gungnir_version() -> None:
+    """Warn when the installed gungnir predates the release we pin.
+
+    A warning, not an exit: the operator's upload is more important than our
+    opinion of their site-packages, and an unparseable version must not be
+    the thing that stops a feeder uploading. Silence when it cannot be read.
+    """
+    have = getattr(gungnir, "__version__", "")
+    have_t, want_t = _version_tuple(have), _version_tuple(REQUIRED_GUNGNIR)
+    if not have_t or not want_t or have_t >= want_t:
+        return
+    print(
+        f"[muninn] WARNING: gungnir {have} is installed but this Muninn "
+        f"expects {REQUIRED_GUNGNIR} or newer.\n"
+        f"[muninn]   Imported from: {os.path.dirname(getattr(gungnir, '__file__', '') or '?')}\n"
+        f"[muninn]   Older releases are missing fixes this version relies "
+        f"on, and the symptoms look like server faults.\n"
+        f"[muninn]   Fix: python -m pip install --upgrade -r "
+        f"requirements.txt",
+        file=sys.stderr,
+    )
+
 
 # Muninn is a CLI tool - configure logging so cron logs look like they
 # did in v1.x (plain-message-per-line to stderr). Library users who set
@@ -3714,6 +3751,11 @@ def main() -> int:
 
     global _QUIET
     _QUIET = args.quiet
+
+    # Before anything that talks to the server, and not suppressed by
+    # --quiet: a wrong gungnir misreports what the server did, so this is
+    # the one line that explains the symptoms that follow.
+    _check_gungnir_version()
 
     # Self-update mode. Handle first, doesn't need an input
     if args.update:
