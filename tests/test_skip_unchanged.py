@@ -25,6 +25,7 @@ network or the operator's real config dir.
 Run: python -m unittest tests/test_skip_unchanged.py
 """
 from __future__ import annotations
+import json
 import sys
 import tempfile
 import unittest
@@ -102,18 +103,81 @@ class SkipUnchangedTests(unittest.TestCase):
                          "scoring behavior on a real upload is unchanged: we "
                          "still send the full snapshot, not just the new one")
 
+    def _mixed_hwm(self, n):
+        """A response that imported something, so the payload gets the short
+        hold: the server does not say WHICH aircraft were new."""
+        return {"last_upload_ts": __import__("time").time() + 5,
+                "counters": {"aircraft_imported": 1,
+                             "aircraft_already_seen": max(n - 1, 0)}}
+
     def test_ttl_expiry_lets_it_send_again(self):
         records = [rec("ABC123")]
-        self._upload(records)
-        _, send = self._upload(records)
+        hwm = self._mixed_hwm(1)
+        self._upload(records, hwm=hwm)
+        _, send = self._upload(records, hwm=hwm)
         self.assertEqual(send.call_count, 0)
 
         with mock.patch.object(muninn.time, "time",
                                return_value=__import__("time").time()
                                + muninn.SENT_TTL_SECONDS + 1):
-            _, send = self._upload(records)
+            _, send = self._upload(records, hwm=hwm)
         self.assertEqual(send.call_count, 1,
                          "suppression must expire, never be permanent")
+
+    def test_zero_import_response_earns_the_long_hold(self):
+        # aircraft_imported == 0 is the server saying it already holds every
+        # aircraft in the payload. That is the case a fixed station hits all
+        # day, and an hourly hold does nothing for it because aircraft turn
+        # over completely inside half an hour.
+        records = [rec("ABC123")]
+        self._upload(records)  # default hwm: imported 0, all already seen
+
+        two_hours = __import__("time").time() + 2 * muninn.SENT_TTL_SECONDS
+        with mock.patch.object(muninn.time, "time", return_value=two_hours):
+            _, send = self._upload(records)
+        self.assertEqual(send.call_count, 0,
+                         "an aircraft the server confirmed it has must stay "
+                         "held well past the one-hour mark")
+
+        past_day = __import__("time").time() + muninn.SERVER_HAS_TTL_SECONDS + 1
+        with mock.patch.object(muninn.time, "time", return_value=past_day):
+            _, send = self._upload(records)
+        self.assertEqual(send.call_count, 1,
+                         "even the long hold must expire")
+
+    def test_mixed_response_keeps_the_short_hold(self):
+        records = [rec("ABC123"), rec("DEF456")]
+        self._upload(records, hwm=self._mixed_hwm(2))
+        two_hours = __import__("time").time() + 2 * muninn.SENT_TTL_SECONDS
+        with mock.patch.object(muninn.time, "time", return_value=two_hours):
+            _, send = self._upload(records, hwm=self._mixed_hwm(2))
+        self.assertEqual(send.call_count, 1,
+                         "the server imported something and did not say "
+                         "what, so nothing here earns the long hold")
+
+    def test_a_later_short_mark_does_not_shorten_a_long_hold(self):
+        # The second payload has to contain something NEW, or the gate skips
+        # it and the overwrite path never runs -- which is how the first
+        # version of this test passed against code that did overwrite.
+        self._upload([rec("ABC123")])  # zero-import: ABC123 held for a day
+
+        mixed = [rec("ABC123"), rec("DEF456")]
+        _, send = self._upload(mixed, hwm=self._mixed_hwm(2))
+        self.assertEqual(send.call_count, 1, "DEF456 is new, so this sends")
+
+        state = muninn._load_sent_state()
+        now = __import__("time").time()
+        self.assertGreater(state["ABC123"], now + muninn.SENT_TTL_SECONDS,
+                           "a confirmed aircraft reappearing in a mixed "
+                           "payload must keep its day-long hold")
+        self.assertLessEqual(state["DEF456"], now + muninn.SENT_TTL_SECONDS,
+                             "the genuinely unconfirmed one stays on the "
+                             "short hold")
+
+        two_hours = now + 2 * muninn.SENT_TTL_SECONDS
+        with mock.patch.object(muninn.time, "time", return_value=two_hours):
+            _, send = self._upload([rec("ABC123")])
+        self.assertEqual(send.call_count, 0)
 
     def test_record_without_icao_is_never_suppressed(self):
         r = rec("ABC123")
@@ -339,13 +403,24 @@ class SkipUnchangedTests(unittest.TestCase):
         self.assertFalse(self.state.exists())
 
     def test_state_is_pruned(self):
+        # Values are hold expiry times, so pruning needs no TTL of its own.
         now = __import__("time").time()
-        state = {f"{i:06X}": now - muninn.SENT_TTL_SECONDS - 10
-                 for i in range(5)}
-        state["FRESH1"] = now
+        state = {f"{i:06X}": now - 10 for i in range(5)}
+        state["FRESH1"] = now + muninn.SENT_TTL_SECONDS
         muninn._save_sent_state(state)
         pruned = muninn._prune_sent_state(muninn._load_sent_state(), now)
         self.assertEqual(list(pruned), ["FRESH1"])
+
+    def test_a_v23x_state_file_degrades_to_sending(self):
+        # v2.3.x stored send times. Read as expiry times they are all in the
+        # past, so the first load prunes them: one redundant upload, then
+        # correct. What must never happen is the reverse, a stale file
+        # suppressing an upload it should not.
+        now = __import__("time").time()
+        self.state.write_text(json.dumps({"ABC123": now}))  # v2.3.x shape
+        _, send = self._upload([rec("ABC123")])
+        self.assertEqual(send.call_count, 1,
+                         "an old-format state must never suppress a sync")
 
 
 if __name__ == "__main__":

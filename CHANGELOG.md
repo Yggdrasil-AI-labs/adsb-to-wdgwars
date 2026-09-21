@@ -6,6 +6,40 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-21 - Hold back what the server says it already has
+
+### Added
+
+- **An aircraft the server confirms it already holds is now held back for a
+  day instead of an hour.** 2.3.1 made the skip work, but it answers the
+  wrong question for a fixed station. Muninn's hold asked "did *we* send
+  this in the last hour"; the server's warning counts "did this payload
+  carry anything new to *the server*". Those diverge badly: measured on a
+  live receiver, aircraft turn over completely inside half an hour, so an
+  hourly hold almost never suppresses a daytime cycle, while the payload is
+  still mostly traffic the server has known for days. Exactly the syncs the
+  warning is counting.
+
+  A response with `aircraft_imported == 0` says every aircraft in that
+  payload was already on file. That is the one time the server itemises
+  what it has, by implication, and it is the server's own verdict rather
+  than an inference of ours. Those aircraft get a day-long hold. A response
+  that imported something keeps the one-hour hold, because it does not say
+  *which* aircraft were new, and so does an upload whose counters could not
+  be read.
+
+  An existing longer hold is never shortened by a later mixed payload.
+
+### Changed
+
+- The already-sent state stores when a hold **expires** rather than when a
+  record was sent, so holds of different lengths live in one map. A v2.3.x
+  state file holds send times, which read as expiries already in the past
+  and are pruned on the first load: one redundant upload, then correct. The
+  failure direction is always toward uploading.
+- The skip message no longer names a fixed duration, since the hold is no
+  longer always an hour. It reports when the soonest aircraft is next due.
+
 ## [2.3.2] - 2026-09-21 - Say so when the pinned gungnir is not the one running
 
 ### Added

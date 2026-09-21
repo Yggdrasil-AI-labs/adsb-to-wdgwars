@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.3.2"
+__version__ = "2.4.0"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1771,15 +1771,39 @@ def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 # an hour down to one.
 SENT_TTL_SECONDS = 3600
 
+# An hour is the right hold for "we sent this and do not know what the server
+# made of it". It is the wrong hold for the case the server tells us about
+# outright.
+#
+# A response with aircraft_imported == 0 says every aircraft in that payload
+# was already on file. That is the one time the server itemises what it has,
+# by implication, and it is exactly what a fixed station needs: measured on a
+# live receiver, aircraft turn over completely inside half an hour, so an
+# hourly hold almost never suppresses anything during the day. The payload is
+# still mostly traffic the server has known for days, which is precisely what
+# its "syncs with nothing new" warning is counting. Holding confirmed aircraft
+# for a day instead of an hour is what actually stops that.
+#
+# Safe because it is the server's own verdict, not our inference: it scored
+# nothing for those aircraft on this upload, so re-offering them sooner gains
+# nothing. Anything the server did import keeps the one-hour hold, since a
+# mixed response does not say WHICH aircraft were new.
+SERVER_HAS_TTL_SECONDS = 86400
+
 _sent_state_write_warned = False
 def _sent_state_path() -> Path:
     return _config_dir() / "sent-aircraft.json"
 
 
 def _load_sent_state() -> dict[str, float]:
-    """Read the ICAO -> last-sent-epoch map. Any problem reading it degrades to
-    "we have sent nothing", which costs one redundant upload and never
-    suppresses one."""
+    """Read the ICAO -> hold-expiry-epoch map. Any problem reading it degrades
+    to "we have sent nothing", which costs one redundant upload and never
+    suppresses one.
+
+    The value is when the hold ENDS, not when the record was sent, so one map
+    can carry both the one-hour hold and the day-long one. A v2.3.x file holds
+    send times, which read as expiries already in the past and are pruned on
+    the first load: one redundant upload, then correct."""
     try:
         data = json.loads(_sent_state_path().read_text())
         return {str(icao): float(ts) for icao, ts in data.items()}
@@ -1814,20 +1838,22 @@ def _save_sent_state(state: dict[str, float]) -> None:
             _sent_state_write_warned = True
 
 
-def _prune_sent_state(state: dict[str, float], now: float,
-                      ttl: float = SENT_TTL_SECONDS) -> dict[str, float]:
-    return {icao: ts for icao, ts in state.items() if now - ts < ttl}
+def _prune_sent_state(state: dict[str, float],
+                      now: float) -> dict[str, float]:
+    """Drop holds that have expired. Values are expiry times, so this needs
+    no TTL of its own and holds of different lengths coexist."""
+    return {icao: exp for icao, exp in state.items() if exp > now}
 
 
-def _unsent_records(records: list[dict], state: dict[str, float], now: float,
-                    ttl: float = SENT_TTL_SECONDS) -> list[dict]:
-    """The subset of ``records`` whose ICAO we have not sent inside the TTL.
+def _unsent_records(records: list[dict], state: dict[str, float],
+                    now: float) -> list[dict]:
+    """The subset of ``records`` whose hold has expired or was never set.
 
     A record with no ICAO counts as unsent: we would rather upload something
     redundant than silently drop an aircraft over a bookkeeping key we could
     not read.
 
-    The TTL comparison here is defensive. Expiry is actually enforced by the
+    The expiry comparison here is defensive. It is enforced by the
     ``_prune_sent_state`` call the only caller makes on load, so a mutation
     test can remove this clause without any test noticing -- it earns its
     place by keeping the function correct for a caller that hands it an
@@ -1838,18 +1864,26 @@ def _unsent_records(records: list[dict], state: dict[str, float], now: float,
         if not icao:
             out.append(r)
             continue
-        last = state.get(str(icao))
-        if last is None or now - last >= ttl:
+        expires = state.get(str(icao))
+        if expires is None or expires <= now:
             out.append(r)
     return out
 
 
-def _mark_sent(records: list[dict], now: float) -> None:
+def _mark_sent(records: list[dict], now: float,
+               ttl: float = SENT_TTL_SECONDS) -> None:
+    """Hold every ICAO in ``records`` until ``now + ttl``.
+
+    An existing longer hold wins: a confirmed-on-file aircraft that turns up
+    in a later mixed payload must not have its day-long hold shortened back
+    to an hour."""
     state = _prune_sent_state(_load_sent_state(), now)
+    expires = now + ttl
     for r in records:
         icao = r.get("icao")
         if icao:
-            state[str(icao)] = now
+            key = str(icao)
+            state[key] = max(state.get(key, 0.0), expires)
     _save_sent_state(state)
 
 
@@ -1912,10 +1946,15 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         state = _prune_sent_state(_load_sent_state(), now)
         new_records = _unsent_records(records, state, now)
         if not new_records:
-            print(f"{_INFO()} nothing new since the last upload "
-                  f"({len(records)} aircraft, all sent within the last "
-                  f"{int(SENT_TTL_SECONDS // 60)} min). Skipping this sync.",
-                  file=sys.stderr)
+            # Deliberately does not name a duration. Holds are not all the
+            # same length any more: an aircraft the server confirmed it has
+            # is held for a day, one we merely sent for an hour.
+            soonest = min(state[str(r["icao"])] for r in records
+                          if r.get("icao") and str(r["icao"]) in state)
+            print(f"{_INFO()} nothing new to send ({len(records)} aircraft, "
+                  f"none due for re-send for another "
+                  f"{max(int((soonest - now) // 60), 1)} min). Skipping "
+                  f"this sync.", file=sys.stderr)
             return 0
 
     rc = gungnir.transport.send(
@@ -1957,7 +1996,15 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
                   f"clearing already-sent state so the next sync uploads in "
                   f"full.", file=sys.stderr)
             _save_sent_state({})
+        elif outcome is not None and outcome[0] == 0:
+            # The server imported nothing from this payload, so it already
+            # holds every aircraft in it. Its own verdict, not our guess,
+            # and the only case where it effectively itemises what it has.
+            _mark_sent(records, now, SERVER_HAS_TTL_SECONDS)
         else:
+            # Either something was imported (and the response does not say
+            # which, so we cannot single those out) or we could not read the
+            # counters. Either way, the short hold.
             _mark_sent(records, now)
     return rc
 
