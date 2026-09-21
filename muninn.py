@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -148,7 +148,7 @@ except ModuleNotFoundError:
 # in one August sample, each one a failed unit and a health alert. The
 # symptom looks like a server problem and costs hours to trace back to an
 # import. One line of output at startup is cheaper than that hunt.
-REQUIRED_GUNGNIR = "0.2.1"
+REQUIRED_GUNGNIR = "0.4.1"
 
 
 def _check_gungnir_version() -> None:
@@ -1772,37 +1772,6 @@ HOLDS_SLOT = "aircraft"
 HOLDS_AVAILABLE = hasattr(gungnir, "holds")
 
 
-def _upload_outcome(sent_at: float, single_chunk: bool) -> tuple[int, int] | None:
-    """``(imported, already_seen)`` for the upload that just happened, or None
-    when we cannot establish what the server did with it.
-
-    gungnir writes the server's own counters to ``hwm.json`` after each
-    successful chunk, which is the only authority on what actually landed.
-    None is not "nothing happened", it is "we did not learn", and the caller
-    must treat the two differently -- recording a payload as sent on the
-    strength of an unread response is how aircraft go missing.
-
-    ``hwm.record`` runs per chunk and keeps only the last, so a multi-chunk
-    upload cannot be checked against its own total and returns None. One guard
-    covers the rest: a missing file, a missing key and a malformed value all
-    mean the same thing here."""
-    if not single_chunk:
-        return None
-    try:
-        h = gungnir.hwm.read("muninn") or {}
-        # Anything older than this upload is a different run's watermark.
-        if float(h["last_upload_ts"]) < sent_at:
-            return None
-        c = h["counters"]
-        imported = int(c["aircraft_imported"] if "aircraft_imported" in c
-                       else c["imported"])
-        already = int(c["aircraft_already_seen"] if "aircraft_already_seen" in c
-                      else c["already_seen"])
-        return imported, already
-    except Exception:
-        return None
-
-
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
            batch_size: int = 500, dry_run: bool = False,
            skip_unchanged: bool = True) -> int:
@@ -1874,8 +1843,9 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         # next sync" retries nothing. The exposure is one hour of
         # suppression on an aircraft that was not going to be re-sent
         # anyway, against a feature that otherwise does not work at all.
-        outcome = _upload_outcome(now, len(records) <= batch_size)
-        if outcome is not None and outcome[0] > len(new_records):
+        imported = gungnir.holds.imported_count(
+            "muninn", now, len(records) <= batch_size)
+        if imported is not None and imported > len(new_records):
             # The server scored aircraft we had written off. Our state is
             # wrong in the one direction that costs him points, so throw it
             # away and let the next cycle upload in full.
@@ -1888,7 +1858,6 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
             # nothing (it already holds every aircraft in the payload, its
             # own verdict), an hour otherwise. None is not zero -- counters
             # we could not read must not earn the long hold.
-            imported = outcome[0] if outcome is not None else None
             gungnir.holds.record_sent("muninn", records, HOLDS_SLOT, now,
                                       gungnir.holds.ttl_for(imported))
     return rc

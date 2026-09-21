@@ -6,6 +6,24 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-09-21 - Use gungnir's imported_count, pin 0.4.1
+
+### Changed
+
+- **`_upload_outcome` is gone**; the same answer now comes from
+  `gungnir.holds.imported_count`. It was the last piece of the gate still
+  duplicated here after v2.5.0, and wigle-to-wdgwars needed the identical
+  logic, which is how the family drifted apart the first time.
+- **Pinned gungnir v0.4.1** (from v0.2.1), matching the rest of the family.
+
+### Note
+
+- Muninn is not affected by the 413 bisection bug fixed in
+  wigle-to-wdgwars v1.7.1. gungnir refuses to bisect a payload ("envelopes
+  are HMAC-signed atomic blobs"), so one logical chunk is always one POST
+  here and the watermark can be trusted as the total. Checked rather than
+  assumed, after the same class of bug was found next door.
+
 ## [2.5.0] - 2026-09-21 - The gate moves into gungnir
 
 ### Changed

@@ -402,6 +402,27 @@ class SkipUnchangedTests(unittest.TestCase):
                          "snapshot-feeder gate")
         self.assertFalse(self.state.exists())
 
+    def test_the_whole_payload_is_recorded_not_just_the_new_part(self):
+        # We send the full snapshot whenever anything in it is new, so the
+        # whole snapshot is what got sent and the whole snapshot is what
+        # gets held. Recording only the previously-unheld subset would let
+        # an aircraft's hold lapse while we were still uploading it every
+        # cycle, and no other assertion here distinguishes the two.
+        now = __import__("time").time()
+        self._upload([rec("ABC123")], hwm=self._mixed_hwm(1))
+        first = muninn.gungnir.holds.load("muninn")["ABC123"]
+
+        half_an_hour = now + muninn.gungnir.holds.SENT_TTL / 2
+        with mock.patch.object(muninn.time, "time",
+                               return_value=half_an_hour):
+            _, send = self._upload([rec("ABC123"), rec("DEF456")],
+                                   hwm=self._mixed_hwm(2))
+        self.assertEqual(send.call_count, 1, "DEF456 is new, so this sends")
+        refreshed = muninn.gungnir.holds.load("muninn")["ABC123"]
+        self.assertGreater(refreshed, first,
+                           "ABC123 was in the payload we just sent, so its "
+                           "hold must be refreshed, not left to lapse")
+
     def test_state_is_pruned(self):
         # Values are hold expiry times, so pruning needs no TTL of its own.
         now = __import__("time").time()
