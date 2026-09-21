@@ -6,6 +6,39 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-21 - The gate moves into gungnir
+
+### Changed
+
+- **The already-sent gate now lives in `gungnir.holds`**, shared with
+  wigle-to-wdgwars and heimdall instead of written three times. Behavior is
+  unchanged: all 23 gate tests pass against the shared implementation
+  without modification, which is the parity proof.
+
+  It grew here over v2.3.0-2.4.0 and took four attempts to get right. The
+  other two feeders have the same problem and neither had the fix, and
+  copying it twice more is exactly how the family drifted apart in the first
+  place.
+
+- **Pinned gungnir v0.2.1** (from v0.1.6). Not v0.2.0: that release's sdist
+  understates its own version, so `pip install --upgrade` is a no-op against
+  it.
+
+### Added
+
+- **An older gungnir turns the gate off instead of crashing.** `--update`
+  reinstalls `requirements.txt` so the pin normally comes along, but
+  "normally" is not a guarantee, and `gungnir.holds` missing would otherwise
+  surface as an `AttributeError` from the middle of an upload. Without it
+  the gate is simply off and uploads behave as they did before v2.3.0. The
+  version guard says why.
+
+### Note
+
+- The old `sent-aircraft.json` in the config dir is no longer read. Holds
+  now live in `holds.json` alongside it. The stale file is harmless and can
+  be deleted; the first cycle after updating uploads normally either way.
+
 ## [2.4.0] - 2026-09-21 - Hold back what the server says it already has
 
 ### Added

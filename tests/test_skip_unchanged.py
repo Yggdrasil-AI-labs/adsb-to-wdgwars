@@ -45,13 +45,13 @@ def rec(icao: str, lat: float = 32.9, lon: float = -117.2) -> dict:
 class SkipUnchangedTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.state = Path(self._tmp.name) / "sent-aircraft.json"
-        p = mock.patch.object(muninn, "_sent_state_path",
-                              return_value=self.state)
+        self.state = Path(self._tmp.name) / "holds.json"
+        # The gate lives in gungnir.holds now. Point its state file at a
+        # temp dir: no test may touch the operator's real config dir.
+        p = mock.patch.object(muninn.gungnir.holds, "_path",
+                              side_effect=lambda tool: self.state)
         p.start()
         self.addCleanup(p.stop)
-        muninn._sent_state_write_warned = False
-        muninn._sent_state_unverified_warned = False
         # Isolation floor: no test may read the operator's real hwm.json.
         # _upload's own patch overrides this per call.
         h = mock.patch.object(muninn.gungnir.hwm, "read", return_value=None)
@@ -119,7 +119,7 @@ class SkipUnchangedTests(unittest.TestCase):
 
         with mock.patch.object(muninn.time, "time",
                                return_value=__import__("time").time()
-                               + muninn.SENT_TTL_SECONDS + 1):
+                               + muninn.gungnir.holds.SENT_TTL + 1):
             _, send = self._upload(records, hwm=hwm)
         self.assertEqual(send.call_count, 1,
                          "suppression must expire, never be permanent")
@@ -132,14 +132,14 @@ class SkipUnchangedTests(unittest.TestCase):
         records = [rec("ABC123")]
         self._upload(records)  # default hwm: imported 0, all already seen
 
-        two_hours = __import__("time").time() + 2 * muninn.SENT_TTL_SECONDS
+        two_hours = __import__("time").time() + 2 * muninn.gungnir.holds.SENT_TTL
         with mock.patch.object(muninn.time, "time", return_value=two_hours):
             _, send = self._upload(records)
         self.assertEqual(send.call_count, 0,
                          "an aircraft the server confirmed it has must stay "
                          "held well past the one-hour mark")
 
-        past_day = __import__("time").time() + muninn.SERVER_HAS_TTL_SECONDS + 1
+        past_day = __import__("time").time() + muninn.gungnir.holds.CONFIRMED_TTL + 1
         with mock.patch.object(muninn.time, "time", return_value=past_day):
             _, send = self._upload(records)
         self.assertEqual(send.call_count, 1,
@@ -148,7 +148,7 @@ class SkipUnchangedTests(unittest.TestCase):
     def test_mixed_response_keeps_the_short_hold(self):
         records = [rec("ABC123"), rec("DEF456")]
         self._upload(records, hwm=self._mixed_hwm(2))
-        two_hours = __import__("time").time() + 2 * muninn.SENT_TTL_SECONDS
+        two_hours = __import__("time").time() + 2 * muninn.gungnir.holds.SENT_TTL
         with mock.patch.object(muninn.time, "time", return_value=two_hours):
             _, send = self._upload(records, hwm=self._mixed_hwm(2))
         self.assertEqual(send.call_count, 1,
@@ -165,16 +165,16 @@ class SkipUnchangedTests(unittest.TestCase):
         _, send = self._upload(mixed, hwm=self._mixed_hwm(2))
         self.assertEqual(send.call_count, 1, "DEF456 is new, so this sends")
 
-        state = muninn._load_sent_state()
+        state = muninn.gungnir.holds.load("muninn")
         now = __import__("time").time()
-        self.assertGreater(state["ABC123"], now + muninn.SENT_TTL_SECONDS,
+        self.assertGreater(state["ABC123"], now + muninn.gungnir.holds.SENT_TTL,
                            "a confirmed aircraft reappearing in a mixed "
                            "payload must keep its day-long hold")
-        self.assertLessEqual(state["DEF456"], now + muninn.SENT_TTL_SECONDS,
+        self.assertLessEqual(state["DEF456"], now + muninn.gungnir.holds.SENT_TTL,
                              "the genuinely unconfirmed one stays on the "
                              "short hold")
 
-        two_hours = now + 2 * muninn.SENT_TTL_SECONDS
+        two_hours = now + 2 * muninn.gungnir.holds.SENT_TTL
         with mock.patch.object(muninn.time, "time", return_value=two_hours):
             _, send = self._upload([rec("ABC123")])
         self.assertEqual(send.call_count, 0)
@@ -238,7 +238,7 @@ class SkipUnchangedTests(unittest.TestCase):
                             "aircraft_already_seen": 0}}
         _, send = self._upload(records, hwm=hwm)
         self.assertEqual(send.call_count, 1)
-        self.assertEqual(muninn._load_sent_state(), {},
+        self.assertEqual(muninn.gungnir.holds.load("muninn"), {},
                          "a server that scores what we called stale must "
                          "clear the state, not be overruled by it")
         _, send = self._upload(records)
@@ -254,7 +254,7 @@ class SkipUnchangedTests(unittest.TestCase):
                "counters": {"aircraft_imported": 1,
                             "aircraft_already_seen": 1}}
         self._upload(records, hwm=hwm)
-        self.assertIn("DEF456", muninn._load_sent_state(),
+        self.assertIn("DEF456", muninn.gungnir.holds.load("muninn"),
                       "the server agreeing must not clear the state")
 
     def test_multi_chunk_upload_does_not_trigger_the_self_heal(self):
@@ -268,7 +268,7 @@ class SkipUnchangedTests(unittest.TestCase):
                "counters": {"aircraft_imported": 99,
                             "aircraft_already_seen": 0}}
         self._upload(records, hwm=hwm, batch_size=1)
-        state = muninn._load_sent_state()
+        state = muninn.gungnir.holds.load("muninn")
         self.assertIn("ABC123", state,
                       "a per-chunk watermark must not trigger the self-heal "
                       "and wipe state the upload did not contradict")
@@ -290,7 +290,7 @@ class SkipUnchangedTests(unittest.TestCase):
                 self.state.unlink(missing_ok=True)
                 records = [rec("ABC123")]
                 self._upload(records, hwm=hwm)
-                self.assertIn("ABC123", muninn._load_sent_state())
+                self.assertIn("ABC123", muninn.gungnir.holds.load("muninn"))
                 _, send = self._upload(records, hwm=hwm)
                 self.assertEqual(send.call_count, 0)
 
@@ -300,7 +300,7 @@ class SkipUnchangedTests(unittest.TestCase):
                "counters": {"aircraft_imported": 99,
                             "aircraft_already_seen": 0}}
         self._upload([rec("ABC123"), rec("DEF456")], hwm=hwm)
-        self.assertIn("ABC123", muninn._load_sent_state(),
+        self.assertIn("ABC123", muninn.gungnir.holds.load("muninn"),
                       "a watermark predating this upload is a different "
                       "run's and must not clear the state")
 
@@ -319,7 +319,7 @@ class SkipUnchangedTests(unittest.TestCase):
                "counters": {"aircraft_imported": 1,
                             "aircraft_already_seen": 1}}
         self._upload(records, hwm=hwm)
-        self.assertEqual(sorted(muninn._load_sent_state()),
+        self.assertEqual(sorted(muninn.gungnir.holds.load("muninn")),
                          ["777AAA", "ABC123", "DEF456"])
         _, send = self._upload(records, hwm=hwm)
         self.assertEqual(send.call_count, 0,
@@ -337,10 +337,10 @@ class SkipUnchangedTests(unittest.TestCase):
             return real(self_path, *a, **kw)
 
         with mock.patch.object(Path, "write_text", spy):
-            muninn._save_sent_state({"ABC123": 1.0})
+            muninn.gungnir.holds.save("muninn", {"ABC123": 1.0})
         self.assertTrue(seen and seen[0].endswith(".tmp"),
                         f"expected a temp-file write, got {seen}")
-        self.assertEqual(muninn._load_sent_state(), {"ABC123": 1.0})
+        self.assertEqual(muninn.gungnir.holds.load("muninn"), {"ABC123": 1.0})
         self.assertEqual(list(self.state.parent.glob("*.tmp")), [],
                          "no temp file may be left behind")
 
@@ -375,7 +375,7 @@ class SkipUnchangedTests(unittest.TestCase):
         for bad in ('{"ABC123": "yesterday"}', '["ABC123"]', '"nope"'):
             with self.subTest(bad=bad):
                 self.state.write_text(bad)
-                self.assertEqual(muninn._load_sent_state(), {})
+                self.assertEqual(muninn.gungnir.holds.load("muninn"), {})
                 _, send = self._upload([rec("ABC123")])
                 self.assertEqual(send.call_count, 1)
 
@@ -406,9 +406,9 @@ class SkipUnchangedTests(unittest.TestCase):
         # Values are hold expiry times, so pruning needs no TTL of its own.
         now = __import__("time").time()
         state = {f"{i:06X}": now - 10 for i in range(5)}
-        state["FRESH1"] = now + muninn.SENT_TTL_SECONDS
-        muninn._save_sent_state(state)
-        pruned = muninn._prune_sent_state(muninn._load_sent_state(), now)
+        state["FRESH1"] = now + muninn.gungnir.holds.SENT_TTL
+        muninn.gungnir.holds.save("muninn", state)
+        pruned = muninn.gungnir.holds.prune(muninn.gungnir.holds.load("muninn"), now)
         self.assertEqual(list(pruned), ["FRESH1"])
 
     def test_a_v23x_state_file_degrades_to_sending(self):

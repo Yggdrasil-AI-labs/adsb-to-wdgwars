@@ -56,8 +56,15 @@ class GungnirVersionGuardTests(unittest.TestCase):
         self.assertEqual(self._run(muninn.REQUIRED_GUNGNIR), "")
 
     def test_newer_version_is_silent(self):
-        self.assertEqual(self._run("0.2.0"), "")
-        self.assertEqual(self._run("1.0.0"), "")
+        # Derived from REQUIRED_GUNGNIR rather than written as literals:
+        # a hardcoded "newer" example becomes an older one at the next bump,
+        # which is how this test failed on the 0.1.6 -> 0.2.1 move.
+        major, minor, patch = muninn._version_tuple(muninn.REQUIRED_GUNGNIR)
+        for newer in (f"{major}.{minor}.{patch + 1}",
+                      f"{major}.{minor + 1}.0",
+                      f"{major + 1}.0.0"):
+            with self.subTest(version=newer):
+                self.assertEqual(self._run(newer), "")
 
     def test_unreadable_version_is_silent(self):
         for bad in ("", "unknown", "not-a-version"):
@@ -87,6 +94,26 @@ class GungnirVersionGuardTests(unittest.TestCase):
                         pass
         self.assertIn("9.9.9", buf.getvalue(),
                       "main() must run the guard before doing any work")
+
+    def test_a_gungnir_without_holds_disables_the_gate_rather_than_crashing(self):
+        # gungnir.holds arrived in 0.2.0. Someone on an older copy must get
+        # a working upload with the gate off, not an AttributeError from the
+        # middle of a send.
+        from unittest import mock as _mock
+        rec = muninn._norm_record("ABC123", lat=1.0, lon=2.0)
+        with _mock.patch.object(muninn, "HOLDS_AVAILABLE", False):
+            with _mock.patch.object(muninn.gungnir.transport, "send",
+                                    return_value=0) as send:
+                rc = muninn.upload([rec], "key", "https://example.invalid")
+        self.assertEqual(rc, 0)
+        self.assertEqual(send.call_count, 1,
+                         "without holds the upload must still go out")
+
+    def test_holds_is_available_in_the_pinned_gungnir(self):
+        # The flip side: with the pin honored it must be present, or the
+        # gate is silently off for everyone.
+        self.assertTrue(muninn.HOLDS_AVAILABLE,
+                        "the pinned gungnir must provide holds")
 
     def test_required_version_matches_the_pin(self):
         # The guard is worthless if it drifts from the pin it enforces.

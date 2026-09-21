@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -148,7 +148,7 @@ except ModuleNotFoundError:
 # in one August sample, each one a failed unit and a health alert. The
 # symptom looks like a server problem and costs hours to trace back to an
 # import. One line of output at startup is cheaper than that hunt.
-REQUIRED_GUNGNIR = "0.1.6"
+REQUIRED_GUNGNIR = "0.2.1"
 
 
 def _check_gungnir_version() -> None:
@@ -1757,134 +1757,19 @@ def _FAIL() -> str:  return _tag("[FAIL]", "1;31")   # bold red
 def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 
 # ── Already-sent tracking ───────────────────────────────────────────────────
-# A fixed station on a timer re-sends the same aircraft every cycle. The server
-# counts those as syncs that carried nothing new and, since the Uplink page
-# landed, says so out loud ("N syncs in a row with nothing new in them"). The
-# aircraft were genuinely already on file, so the nag is correct -- the fix is
-# to not make the request at all when we know every ICAO in the payload went up
-# recently.
-#
-# TTL, not "forever": an aircraft already on file scores nothing on re-upload
-# TODAY, but that is the server's rule to change, not ours to assume in
-# perpetuity. Re-sending each ICAO at most once an hour keeps the worst case at
-# zero lost score while taking an idle overnight feeder from four wasted syncs
-# an hour down to one.
-SENT_TTL_SECONDS = 3600
+# The gate itself lives in gungnir.holds, shared with wigle-to-wdgwars and
+# heimdall. It grew here over v2.3.0-2.4.0 and took four attempts to get
+# right; writing it a second and third time is how the feeders drift apart,
+# which is the whole reason it moved. Muninn keeps the ADS-B specifics: which
+# slot its records belong to, and the --no-skip-unchanged switch.
+HOLDS_SLOT = "aircraft"
 
-# An hour is the right hold for "we sent this and do not know what the server
-# made of it". It is the wrong hold for the case the server tells us about
-# outright.
-#
-# A response with aircraft_imported == 0 says every aircraft in that payload
-# was already on file. That is the one time the server itemises what it has,
-# by implication, and it is exactly what a fixed station needs: measured on a
-# live receiver, aircraft turn over completely inside half an hour, so an
-# hourly hold almost never suppresses anything during the day. The payload is
-# still mostly traffic the server has known for days, which is precisely what
-# its "syncs with nothing new" warning is counting. Holding confirmed aircraft
-# for a day instead of an hour is what actually stops that.
-#
-# Safe because it is the server's own verdict, not our inference: it scored
-# nothing for those aircraft on this upload, so re-offering them sooner gains
-# nothing. Anything the server did import keeps the one-hour hold, since a
-# mixed response does not say WHICH aircraft were new.
-SERVER_HAS_TTL_SECONDS = 86400
-
-_sent_state_write_warned = False
-def _sent_state_path() -> Path:
-    return _config_dir() / "sent-aircraft.json"
-
-
-def _load_sent_state() -> dict[str, float]:
-    """Read the ICAO -> hold-expiry-epoch map. Any problem reading it degrades
-    to "we have sent nothing", which costs one redundant upload and never
-    suppresses one.
-
-    The value is when the hold ENDS, not when the record was sent, so one map
-    can carry both the one-hour hold and the day-long one. A v2.3.x file holds
-    send times, which read as expiries already in the past and are pruned on
-    the first load: one redundant upload, then correct."""
-    try:
-        data = json.loads(_sent_state_path().read_text())
-        return {str(icao): float(ts) for icao, ts in data.items()}
-    except Exception:
-        return {}
-
-
-def _save_sent_state(state: dict[str, float]) -> None:
-    """Persist the map atomically. A failure here must never take down an
-    upload loop, so it warns once and moves on.
-
-    Written to a temp file in the same directory and renamed over the target,
-    because --schedule can install a watch daemon and a periodic task against
-    one config dir: a reader must never see a half-written file, whatever the
-    writers do to each other."""
-    global _sent_state_write_warned
-    path = _sent_state_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(state, indent=2))
-        os.replace(tmp, path)
-    except OSError as e:
-        try:
-            tmp.unlink(missing_ok=True)
-        except (OSError, UnboundLocalError):
-            pass
-        if not _sent_state_write_warned:
-            print(f"[muninn] WARNING: could not persist already-sent state to "
-                  f"{path} ({e}); every cycle will upload in full",
-                  file=sys.stderr)
-            _sent_state_write_warned = True
-
-
-def _prune_sent_state(state: dict[str, float],
-                      now: float) -> dict[str, float]:
-    """Drop holds that have expired. Values are expiry times, so this needs
-    no TTL of its own and holds of different lengths coexist."""
-    return {icao: exp for icao, exp in state.items() if exp > now}
-
-
-def _unsent_records(records: list[dict], state: dict[str, float],
-                    now: float) -> list[dict]:
-    """The subset of ``records`` whose hold has expired or was never set.
-
-    A record with no ICAO counts as unsent: we would rather upload something
-    redundant than silently drop an aircraft over a bookkeeping key we could
-    not read.
-
-    The expiry comparison here is defensive. It is enforced by the
-    ``_prune_sent_state`` call the only caller makes on load, so a mutation
-    test can remove this clause without any test noticing -- it earns its
-    place by keeping the function correct for a caller that hands it an
-    unpruned state, not by being the mechanism."""
-    out = []
-    for r in records:
-        icao = r.get("icao")
-        if not icao:
-            out.append(r)
-            continue
-        expires = state.get(str(icao))
-        if expires is None or expires <= now:
-            out.append(r)
-    return out
-
-
-def _mark_sent(records: list[dict], now: float,
-               ttl: float = SENT_TTL_SECONDS) -> None:
-    """Hold every ICAO in ``records`` until ``now + ttl``.
-
-    An existing longer hold wins: a confirmed-on-file aircraft that turns up
-    in a later mixed payload must not have its day-long hold shortened back
-    to an hour."""
-    state = _prune_sent_state(_load_sent_state(), now)
-    expires = now + ttl
-    for r in records:
-        icao = r.get("icao")
-        if icao:
-            key = str(icao)
-            state[key] = max(state.get(key, 0.0), expires)
-    _save_sent_state(state)
+# gungnir.holds arrived in 0.2.0. --update reinstalls requirements.txt, so
+# the pin normally comes along, but "normally" is not a guarantee and an
+# AttributeError mid-upload is a terrible way to find out. Without it the
+# gate simply turns off and uploads carry on exactly as they did before
+# v2.3.0. The version guard says why.
+HOLDS_AVAILABLE = hasattr(gungnir, "holds")
 
 
 def _upload_outcome(sent_at: float, single_chunk: bool) -> tuple[int, int] | None:
@@ -1936,21 +1821,23 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     Wire shape (HMAC envelope) is byte-identical to v1.11.1, verified
     by ``gungnir/tests/test_muninn_parity.py``.
 
-    ``skip_unchanged`` suppresses the request entirely when every ICAO in
-    ``records`` was already uploaded inside SENT_TTL_SECONDS. Disable it with
-    --no-skip-unchanged. A dry run never consults or updates the state.
+    ``skip_unchanged`` suppresses the request entirely when every aircraft in
+    ``records`` is still held by ``gungnir.holds``. Disable it with
+    --no-skip-unchanged. A dry run never consults or updates the holds.
     """
     now = time.time()
     new_records = records
-    if skip_unchanged and not dry_run and records:
-        state = _prune_sent_state(_load_sent_state(), now)
-        new_records = _unsent_records(records, state, now)
+    if skip_unchanged and HOLDS_AVAILABLE and not dry_run and records:
+        state = gungnir.holds.prune(gungnir.holds.load("muninn"), now)
+        new_records = gungnir.holds.unheld(records, HOLDS_SLOT, state, now)
         if not new_records:
-            # Deliberately does not name a duration. Holds are not all the
-            # same length any more: an aircraft the server confirmed it has
-            # is held for a day, one we merely sent for an hour.
-            soonest = min(state[str(r["icao"])] for r in records
-                          if r.get("icao") and str(r["icao"]) in state)
+            # Deliberately does not name a fixed duration. Holds are not all
+            # the same length: an aircraft the server confirmed it has is
+            # held for a day, one we merely sent for an hour.
+            held = [state[k] for k in
+                    (gungnir.holds.identity(r, HOLDS_SLOT) for r in records)
+                    if k in state]
+            soonest = min(held) if held else now
             print(f"{_INFO()} nothing new to send ({len(records)} aircraft, "
                   f"none due for re-send for another "
                   f"{max(int((soonest - now) // 60), 1)} min). Skipping "
@@ -1965,7 +1852,7 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         user_agent_extra=GITHUB_URL,
     )
 
-    if skip_unchanged and not dry_run and rc == 0 and records:
+    if skip_unchanged and HOLDS_AVAILABLE and not dry_run and rc == 0 and records:
         # A successful upload is recorded as sent. We deliberately do NOT
         # require the server's counters to add up to the payload first.
         #
@@ -1995,17 +1882,15 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
             print(f"{_INFO()} the server accepted more aircraft than expected; "
                   f"clearing already-sent state so the next sync uploads in "
                   f"full.", file=sys.stderr)
-            _save_sent_state({})
-        elif outcome is not None and outcome[0] == 0:
-            # The server imported nothing from this payload, so it already
-            # holds every aircraft in it. Its own verdict, not our guess,
-            # and the only case where it effectively itemises what it has.
-            _mark_sent(records, now, SERVER_HAS_TTL_SECONDS)
+            gungnir.holds.save("muninn", {})
         else:
-            # Either something was imported (and the response does not say
-            # which, so we cannot single those out) or we could not read the
-            # counters. Either way, the short hold.
-            _mark_sent(records, now)
+            # holds.ttl_for picks the length: a day when the server imported
+            # nothing (it already holds every aircraft in the payload, its
+            # own verdict), an hour otherwise. None is not zero -- counters
+            # we could not read must not earn the long hold.
+            imported = outcome[0] if outcome is not None else None
+            gungnir.holds.record_sent("muninn", records, HOLDS_SLOT, now,
+                                      gungnir.holds.ttl_for(imported))
     return rc
 
 
