@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1735,24 +1735,6 @@ def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 SENT_TTL_SECONDS = 3600
 
 _sent_state_write_warned = False
-_sent_state_unverified_warned = False
-
-
-def _warn_unverified_once() -> None:
-    """Say so the first time we cannot confirm what an upload did.
-
-    A gate that quietly stops gating is worse than one that never existed,
-    because nothing distinguishes it from a feeder that simply always has
-    new aircraft."""
-    global _sent_state_unverified_warned
-    if not _sent_state_unverified_warned:
-        print(f"{_INFO()} could not read the server's counters for this "
-              f"upload, so nothing was recorded as sent (multi-chunk "
-              f"uploads cannot be verified this way). Syncs will not be "
-              f"skipped while this is the case.", file=sys.stderr)
-        _sent_state_unverified_warned = True
-
-
 def _sent_state_path() -> Path:
     return _config_dir() / "sent-aircraft.json"
 
@@ -1908,13 +1890,29 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     )
 
     if skip_unchanged and not dry_run and rc == 0 and records:
+        # A successful upload is recorded as sent. We deliberately do NOT
+        # require the server's counters to add up to the payload first.
+        #
+        # v2.3.0 did, and it was wrong twice over. The counters overlap
+        # rather than partition a payload: a one-record upload comes back
+        # imported=1 AND captured=1, so they cannot be summed. And in the
+        # field they routinely land one short of the payload, measured on
+        # six consecutive cycles from an ADS-B feeder: 152 of 153, 121 of
+        # 122, 137 of 138, interleaved with cycles that matched exactly.
+        # Requiring equality meant that feeder never recorded anything and
+        # the gate never once engaged.
+        #
+        # What that check was guarding is real but small: the server can
+        # accept an upload and quietly keep less of it than we sent, since
+        # gungnir only fails an upload when EVERY counter is zero. The
+        # remedy does not fit the data though. An ADS-B payload is a live
+        # snapshot, not a queue: an aircraft the server dropped has usually
+        # left the receiver's range before the next cycle, so "retry it
+        # next sync" retries nothing. The exposure is one hour of
+        # suppression on an aircraft that was not going to be re-sent
+        # anyway, against a feature that otherwise does not work at all.
         outcome = _upload_outcome(now, len(records) <= batch_size)
-        if outcome is None:
-            # We do not know what the server did with this payload, so we
-            # record nothing. The cost is that the next cycle uploads in
-            # full, which is exactly what every version before this one did.
-            _warn_unverified_once()
-        elif outcome[0] > len(new_records):
+        if outcome is not None and outcome[0] > len(new_records):
             # The server scored aircraft we had written off. Our state is
             # wrong in the one direction that costs him points, so throw it
             # away and let the next cycle upload in full.
@@ -1922,18 +1920,8 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
                   f"clearing already-sent state so the next sync uploads in "
                   f"full.", file=sys.stderr)
             _save_sent_state({})
-        elif sum(outcome) == len(records):
-            _mark_sent(records, now)
         else:
-            # The counters account for fewer aircraft than we sent, so the
-            # server dropped some without saying which. rc is still 0
-            # because gungnir only fails an upload when EVERY counter is
-            # zero. Marking the payload sent here would suppress the
-            # dropped ones for a full TTL; leaving the state alone retries
-            # them next cycle.
-            print(f"{_INFO()} the server accounted for {sum(outcome)} of "
-                  f"{len(records)} aircraft; not recording this payload as "
-                  f"sent so the rest retry next sync.", file=sys.stderr)
+            _mark_sent(records, now)
     return rc
 
 

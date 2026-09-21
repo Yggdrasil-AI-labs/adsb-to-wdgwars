@@ -6,6 +6,42 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-09-20 - The gate actually engages
+
+### Fixed
+
+- **v2.3.0 never skipped a sync on a real feeder.** It recorded a payload as
+  sent only once the server's counters accounted for all of it, and on a busy
+  feed they routinely do not. Measured on six consecutive cycles from an
+  ADS-B station: 152 of 153, 121 of 122 and 137 of 138, interleaved with
+  cycles that matched exactly. Every short cycle refused to record, so the
+  already-sent state stayed empty and the gate never engaged once. The only
+  visible effect of 2.3.0 for that operator was a new log line implying data
+  loss where there was none.
+
+  Reading more counters does not fix it. A live aircraft upload returns
+  `aircraft_imported` and `aircraft_already_seen` with every other counter at
+  zero (verified against the API on 2026-09-20), so the missing aircraft is
+  counted nowhere at all. On the networks path the counters overlap instead
+  of partitioning — a one-record upload comes back `imported:1` **and**
+  `captured:1` — so they cannot be summed either. The counters were never an
+  accounting of the payload and cannot be made into one.
+
+  A successful upload is now recorded as sent. What the accounting check was
+  guarding is real but small: the server can accept an upload and keep less
+  of it than was sent, because gungnir only fails an upload when *every*
+  counter is zero. The remedy did not fit the data. An ADS-B payload is a
+  live snapshot rather than a queue, so an aircraft the server dropped has
+  usually left the receiver's range before the next cycle and "retry it next
+  sync" retries nothing. The exposure is up to an hour of suppression on an
+  aircraft that was not going to be re-sent anyway, against a feature that
+  otherwise does nothing at all.
+
+  The over-suppression check is unchanged: an upload importing more aircraft
+  than Muninn classified as new still clears the state. It no longer gates
+  whether a payload is recorded, which also re-enables the skip for
+  multi-chunk uploads.
+
 ## [2.3.0] - 2026-09-20 - A sync that carries nothing new is no longer sent
 
 ### Added

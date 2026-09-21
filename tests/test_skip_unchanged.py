@@ -205,14 +205,18 @@ class SkipUnchangedTests(unittest.TestCase):
                             "aircraft_already_seen": 0}}
         self._upload(records, hwm=hwm, batch_size=1)
         state = muninn._load_sent_state()
-        self.assertEqual(list(state), ["ABC123"],
-                         "a per-chunk watermark tells us nothing about the "
-                         "whole upload: neither clear the state nor add to it")
+        self.assertIn("ABC123", state,
+                      "a per-chunk watermark must not trigger the self-heal "
+                      "and wipe state the upload did not contradict")
+        self.assertIn("DEF456", state,
+                      "the upload still succeeded, so it is still recorded")
 
-    def test_unverifiable_upload_records_nothing(self):
-        # No watermark at all, and a watermark predating this upload (some
-        # other run's), both mean the same thing: we did not learn what the
-        # server did, so nothing may be recorded as sent.
+    def test_unreadable_watermark_still_records_a_successful_upload(self):
+        # The watermark only drives the over-suppression check. Not being
+        # able to read it (none written, or one from another run) means the
+        # check cannot fire, not that the upload did not happen -- rc said
+        # it did. Tying the recording to the watermark disabled the gate for
+        # multi-chunk uploads too, which was never the intent.
         for label, hwm in (
                 ("missing", None),
                 ("stale", {"last_upload_ts": 1.0,
@@ -222,11 +226,9 @@ class SkipUnchangedTests(unittest.TestCase):
                 self.state.unlink(missing_ok=True)
                 records = [rec("ABC123")]
                 self._upload(records, hwm=hwm)
-                self.assertEqual(muninn._load_sent_state(), {})
+                self.assertIn("ABC123", muninn._load_sent_state())
                 _, send = self._upload(records, hwm=hwm)
-                self.assertEqual(send.call_count, 1,
-                                 "an unverified upload must not suppress the "
-                                 "next one")
+                self.assertEqual(send.call_count, 0)
 
     def test_stale_watermark_does_not_clear_existing_state(self):
         self._upload([rec("ABC123")])
@@ -238,19 +240,27 @@ class SkipUnchangedTests(unittest.TestCase):
                       "a watermark predating this upload is a different "
                       "run's and must not clear the state")
 
-    def test_partially_accounted_payload_is_not_marked_sent(self):
-        # rc is 0 whenever ANY counter is non-zero, so a server that quietly
-        # dropped some aircraft still looks like success. Recording the whole
-        # payload here would suppress the dropped ones for a full TTL.
+    def test_partially_accounted_payload_is_still_marked_sent(self):
+        # Measured against the live API 2026-09-20: an aircraft upload comes
+        # back with aircraft_imported + aircraft_already_seen and every other
+        # counter at zero, and in the field that pair lands one short of the
+        # payload on roughly half of a busy feeder's cycles. The shortfall is
+        # in no counter, so no amount of reading more of them closes it.
+        #
+        # v2.3.0 required the counters to account for the payload before
+        # recording it, which meant that feeder recorded nothing, ever, and
+        # the gate never engaged. A successful upload is now recorded.
         records = [rec("ABC123"), rec("DEF456"), rec("777AAA")]
         hwm = {"last_upload_ts": __import__("time").time() + 5,
                "counters": {"aircraft_imported": 1,
                             "aircraft_already_seen": 1}}
         self._upload(records, hwm=hwm)
-        self.assertEqual(muninn._load_sent_state(), {},
-                         "2 of 3 accounted for: the payload must retry")
+        self.assertEqual(sorted(muninn._load_sent_state()),
+                         ["777AAA", "ABC123", "DEF456"])
         _, send = self._upload(records, hwm=hwm)
-        self.assertEqual(send.call_count, 1)
+        self.assertEqual(send.call_count, 0,
+                         "the gate must engage on a real feeder's counters, "
+                         "not just on ones that add up")
 
     def test_state_file_is_replaced_atomically(self):
         # A concurrent reader must never see a half-written file, so the
