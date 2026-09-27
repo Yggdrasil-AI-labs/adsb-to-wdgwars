@@ -6,6 +6,13 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-09-27 - Owner-only holds files
+
+### Changed
+
+- **Pinned gungnir v0.6.1**, which creates holds files 0600 instead of
+  world-readable. Run `--update`; existing files tighten on the next sync.
+
 ## [2.7.0] - 2026-09-27 - Per-key holds and --reset-holds
 
 ### Added
