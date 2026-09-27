@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.7.1"
+__version__ = "2.7.2"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -148,7 +148,7 @@ except ModuleNotFoundError:
 # in one August sample, each one a failed unit and a health alert. The
 # symptom looks like a server problem and costs hours to trace back to an
 # import. One line of output at startup is cheaper than that hunt.
-REQUIRED_GUNGNIR = "0.6.1"
+REQUIRED_GUNGNIR = "0.6.2"
 
 
 def _check_gungnir_version() -> None:

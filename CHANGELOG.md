@@ -6,6 +6,14 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.7.2] - 2026-09-27 - Windows: saves no longer lost to a busy file
+
+### Changed
+
+- **Pinned gungnir v0.6.2**, which retries saving the holds file when
+  another Muninn process has it open (Windows only). Before, about 60% of
+  saves could fail under contention and each failure cost a full re-upload.
+
 ## [2.7.1] - 2026-09-27 - Owner-only holds files
 
 ### Changed
