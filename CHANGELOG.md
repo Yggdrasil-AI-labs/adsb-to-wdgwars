@@ -6,6 +6,19 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-27 - Per-key holds and --reset-holds
+
+### Added
+
+- **Holds are kept per API key.** With the 30-day hold, pointing a receiver
+  at another account's key would otherwise leave that account without
+  every aircraft the first one was sent, for a month. Only a truncated hash
+  of the key reaches the file name. The pre-2.7.0 `holds.json` is no longer
+  read, costing at most one full upload.
+- **`--reset-holds`** deletes every holds file, all keys, so the next sync
+  uploads in full. The escape hatch v2.6.0 lacked once the self-heal went.
+- **Pinned gungnir v0.6.0**; an older one turns the gate off.
+
 ## [2.6.0] - 2026-09-27 - Send only what the server has not seen
 
 ### Changed

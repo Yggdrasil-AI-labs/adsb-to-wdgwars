@@ -227,7 +227,7 @@ By configuring a key you're authorising Muninn to upload the captures you give i
 
 If you run on a timer, most of what you upload is aircraft the server already has. Muninn remembers which ICAOs it has sent and uploads only the ones it has not sent in the last 30 days. When that leaves nothing, the sync is skipped entirely, which is what the Uplink page's "syncs in a row with nothing new in them" warning is asking for. Pass `--no-skip-unchanged` if you would rather send the full snapshot every cycle.
 
-The hold is 30 days because the server counts an aircraft as new only the first time your account sees it, and a station near an airport sees the same airline tails every day. A shorter hold just re-offers them each morning. After an accepted upload every aircraft in it is on file, so they all get the same hold. It always expires, and a failed upload records nothing.
+The hold is 30 days because the server counts an aircraft as new only the first time your account sees it, and a station near an airport sees the same airline tails every day. A shorter hold just re-offers them each morning. After an accepted upload every aircraft in it is on file, so they all get the same hold. It always expires, and a failed upload records nothing. Holds are kept per API key, so switching a receiver to another account's key starts that account fresh. If the holds ever look wrong, `python3 muninn.py --reset-holds` deletes them and the next sync uploads everything.
 
 ---
 
@@ -379,6 +379,7 @@ Notes on `.sqb`:
                    timestamps (default: treat as UTC)
 --setup            interactive API-key wizard
 --save-key KEY     non-interactive: save a given API key
+--reset-holds      forget which aircraft were sent (all keys); next sync uploads in full
 --whoami           validate your stored API key and show account stats
 --no-save          with --upload, skip writing the local JSON file
 --dry-run          with --upload, build the request but don't send

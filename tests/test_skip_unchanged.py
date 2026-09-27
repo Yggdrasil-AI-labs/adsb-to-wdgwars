@@ -319,5 +319,53 @@ class SkipUnchangedTests(unittest.TestCase):
                          "an old-format state must never suppress a sync")
 
 
+
+class PerKeyHoldsTests(unittest.TestCase):
+    """v2.7.0: one holds file per API key. With a 30-day hold, a receiver
+    switched to another account's key must not have that account starved
+    by the first one's holds."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        d = Path(self._tmp.name)
+        p = mock.patch.object(muninn.gungnir.holds, "_path",
+                              side_effect=lambda tool: d / f"{tool}.json")
+        p.start()
+        self.addCleanup(p.stop)
+        h = mock.patch.object(muninn.gungnir.hwm, "read", return_value=None)
+        h.start()
+        self.addCleanup(h.stop)
+
+    def _upload(self, key):
+        with mock.patch.object(muninn.gungnir.transport, "send",
+                               return_value=0) as send:
+            muninn.upload([rec("ABC123")], key, "https://example.invalid")
+        return send.call_count
+
+    def test_a_second_key_is_not_held_by_the_first(self):
+        self.assertEqual(self._upload("key-a"), 1)
+        self.assertEqual(self._upload("key-a"), 0, "same key: held")
+        self.assertEqual(self._upload("key-b"), 1,
+                         "another account has not been sent this aircraft")
+
+
+class ResetHoldsFlagTests(unittest.TestCase):
+    def _main(self, removed):
+        with mock.patch.object(muninn.gungnir.holds, "reset",
+                               return_value=removed) as reset,              mock.patch.object(sys, "argv", ["muninn.py", "--reset-holds"]):
+            rc = muninn.main()
+        return rc, reset
+
+    def test_the_flag_resets_every_key_and_exits_clean(self):
+        rc, reset = self._main([Path("holds-abc.json")])
+        self.assertEqual(rc, 0)
+        reset.assert_called_once_with("muninn")
+
+    def test_nothing_to_reset_is_still_success(self):
+        rc, _ = self._main([])
+        self.assertEqual(rc, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

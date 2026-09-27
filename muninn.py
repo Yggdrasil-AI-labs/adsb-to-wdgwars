@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.6.0"
+__version__ = "2.7.0"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -148,7 +148,7 @@ except ModuleNotFoundError:
 # in one August sample, each one a failed unit and a health alert. The
 # symptom looks like a server problem and costs hours to trace back to an
 # import. One line of output at startup is cheaper than that hunt.
-REQUIRED_GUNGNIR = "0.5.0"
+REQUIRED_GUNGNIR = "0.6.0"
 
 
 def _check_gungnir_version() -> None:
@@ -1771,7 +1771,9 @@ HOLDS_SLOT = "aircraft"
 # uploads carry on exactly as they did before v2.3.0. The version guard
 # says why.
 HOLDS_AVAILABLE = (hasattr(gungnir, "holds")
-                   and hasattr(gungnir.holds, "ACCEPTED_TTL"))
+                   and hasattr(gungnir.holds, "ACCEPTED_TTL")
+                   and hasattr(gungnir.holds, "scoped"))
+HOLDS_TOOL = "muninn"
 
 
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
@@ -1801,7 +1803,10 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     to_send = records
     gated = skip_unchanged and HOLDS_AVAILABLE and not dry_run and records
     if gated:
-        state = gungnir.holds.prune(gungnir.holds.load("muninn"), now)
+        # One holds file per API key (v2.7.0): what one account was sent
+        # says nothing about what another has.
+        scope = gungnir.holds.scoped(HOLDS_TOOL, api_key)
+        state = gungnir.holds.prune(gungnir.holds.load(scope), now)
         to_send = gungnir.holds.unheld(records, HOLDS_SLOT, state, now)
         if not to_send:
             print(f"{_INFO()} nothing new to send ({len(records)} aircraft, "
@@ -1845,9 +1850,25 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
         # quietly does not keep (counters land one short on some cycles,
         # measured 2026-09-20) is not offered again for 30 days. A
         # month-long hold on one tail is worth a gate that engages.
-        gungnir.holds.record_sent("muninn", to_send, HOLDS_SLOT, now,
+        gungnir.holds.record_sent(scope, to_send, HOLDS_SLOT, now,
                                   gungnir.holds.ACCEPTED_TTL)
     return rc
+
+
+def cmd_reset_holds() -> int:
+    """--reset-holds: delete every already-sent holds file, all keys."""
+    if not HOLDS_AVAILABLE:
+        print(f"{_INFO()} this gungnir has no per-key holds; nothing to "
+              f"reset. Run --update.", file=sys.stderr)
+        return 0
+    removed = gungnir.holds.reset(HOLDS_TOOL)
+    if not removed:
+        print(f"{_INFO()} no holds to reset.", file=sys.stderr)
+        return 0
+    for f in removed:
+        print(f"{_OK()} removed {f}", file=sys.stderr)
+    print(f"{_INFO()} the next sync uploads in full.", file=sys.stderr)
+    return 0
 
 
 # ── Watch mode ──────────────────────────────────────────────────────────────
@@ -3530,6 +3551,10 @@ def main() -> int:
     ap.add_argument("--save-key", metavar="KEY",
                     help="non-interactive: save the given API key to the user "
                          "config dir. Prefer --setup for first-time install.")
+    ap.add_argument("--reset-holds", action="store_true",
+                    help="forget which aircraft have been sent, for every "
+                         "API key, so the next sync uploads in full; exits "
+                         "after.")
     ap.add_argument("--whoami", action="store_true",
                     help="validate your stored API key by hitting /api/me and "
                          "showing your account stats; exits after.")
@@ -3709,6 +3734,8 @@ def main() -> int:
         if headless:
             return cmd_schedule_headless(args)
         return interactive_schedule_setup()
+    if args.reset_holds:
+        return cmd_reset_holds()
     if args.whoami:
         key = load_key(args.key)
         if not key:
