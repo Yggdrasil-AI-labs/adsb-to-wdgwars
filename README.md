@@ -225,14 +225,9 @@ By configuring a key you're authorising Muninn to upload the captures you give i
 
 ### Quiet skies don't cost a sync
 
-If you run on a timer, most of what you upload is aircraft the server already has. Muninn remembers which ICAOs it sent and skips the upload entirely when a cycle would carry nothing new, which is what the Uplink page's "syncs in a row with nothing new in them" warning is asking for. The moment a new aircraft shows up, the full snapshot goes out as normal. Pass `--no-skip-unchanged` if you would rather send every cycle regardless.
+If you run on a timer, most of what you upload is aircraft the server already has. Muninn remembers which ICAOs it has sent and uploads only the ones it has not sent in the last 30 days. When that leaves nothing, the sync is skipped entirely, which is what the Uplink page's "syncs in a row with nothing new in them" warning is asking for. Pass `--no-skip-unchanged` if you would rather send the full snapshot every cycle.
 
-How long an aircraft is held back depends on what the server said about it:
-
-- **A day**, when the upload it went out in came back with nothing imported. That response means the server already had every aircraft in that payload, so re-offering them sooner gains nothing. This is the case a fixed station hits all day long.
-- **An hour**, when the server did import something, or when Muninn could not read the response. A mixed response does not say *which* aircraft were new, so nothing in it earns the longer hold.
-
-Nothing is ever held permanently, and the hold is per aircraft rather than per file, so a snapshot containing one aircraft you have not sent recently still goes out in full.
+The hold is 30 days because the server counts an aircraft as new only the first time your account sees it, and a station near an airport sees the same airline tails every day. A shorter hold just re-offers them each morning. After an accepted upload every aircraft in it is on file, so they all get the same hold. It always expires, and a failed upload records nothing.
 
 ---
 
@@ -387,8 +382,8 @@ Notes on `.sqb`:
 --whoami           validate your stored API key and show account stats
 --no-save          with --upload, skip writing the local JSON file
 --dry-run          with --upload, build the request but don't send
---no-skip-unchanged  upload every cycle even when every aircraft in it was
-                   already sent in the last hour (default: skip that sync)
+--no-skip-unchanged  upload the full snapshot every cycle (default: send only
+                   aircraft not sent in the last 30 days, skip if none)
 --key KEY          one-shot override of the stored API key
 --api-url URL      override the upload endpoint
 --batch-size N     aircraft per upload chunk (default: 1000)

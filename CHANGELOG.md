@@ -6,6 +6,33 @@ All notable changes to Muninn are documented here. Format follows
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-27 - Send only what the server has not seen
+
+### Changed
+
+- **Only unheld aircraft are uploaded.** Up to 2.5.1 the gate was
+  all-or-nothing: one aircraft not held sent the whole snapshot. A fixed
+  receiver near an airport sees ~140 aircraft with full turnover inside
+  half an hour, so there was always a newcomer and the gate almost never
+  fired in daylight. An operator's log showed 76, 81, 85 aircraft going up
+  each cycle with the server answering "already on file" for nearly all.
+- **Everything in an accepted upload is held for 30 days**
+  (`gungnir.holds.ACCEPTED_TTL`), replacing the hour/day split. The server
+  counts an aircraft as new only the first time the account sees it, so the
+  day hold let the daily regulars come back each morning as syncs with
+  nothing new in them. After an accepted upload every aircraft in it is on
+  file, so they all earn the same hold.
+- **The self-heal is gone.** It cleared the state when the server imported
+  more than expected, which can no longer happen: held aircraft are never
+  sent, so no response can contradict a hold.
+- **Pinned gungnir v0.5.0.** An older gungnir turns the gate off rather than
+  failing mid-upload, and the version guard says so.
+
+### Known trade-off
+
+- An aircraft the server accepts but quietly does not keep is not offered
+  again for 30 days. Chosen knowingly over a gate that does not engage.
+
 ## [2.5.1] - 2026-09-21 - Use gungnir's imported_count, pin 0.4.1
 
 ### Changed

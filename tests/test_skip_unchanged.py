@@ -6,18 +6,20 @@ says so ("N syncs in a row with nothing new in them"). Reported by a feeder
 operator 2026-09-20 with a streak of 28, which is seven hours at his
 15-minute interval: an overnight window, not a fault.
 
-The gate suppresses the request when every ICAO in the payload went up
-inside SENT_TTL_SECONDS. What these tests hold down:
+v2.6.0 sends only the aircraft that are not held, and holds everything in
+an accepted upload for gungnir.holds.ACCEPTED_TTL (30 days). Up to v2.5.1
+one unheld aircraft sent the whole snapshot, which on a busy receiver
+meant the gate almost never fired. What these tests hold down:
 
-1. A repeat payload skips the POST entirely; one new ICAO in it does not.
-2. The TTL expires, so suppression can never be permanent.
+1. A repeat payload skips the POST entirely; one new ICAO in it sends
+   only that ICAO.
+2. The hold lasts a month and then expires, so suppression is never
+   permanent.
 3. A record with no ICAO is never suppressed (we upload rather than drop
    an aircraft over a bookkeeping key we couldn't read).
 4. --dry-run neither reads nor writes the state.
-5. --no-skip-unchanged restores the old always-upload behavior.
-6. The state defers to the server: when hwm.json shows the server imported
-   more aircraft than we classified as new, the state is dropped rather
-   than trusted, because over-suppressing is the failure that costs score.
+5. --no-skip-unchanged restores the old full-snapshot behavior.
+6. A failed upload records nothing, so it is retried.
 
 The transport is mocked throughout -- these tests must never touch the
 network or the operator's real config dir.
@@ -59,24 +61,17 @@ class SkipUnchangedTests(unittest.TestCase):
         self.addCleanup(h.stop)
         self.addCleanup(self._tmp.cleanup)
 
-    def _upload(self, records, hwm="auto", **kw):
-        """One upload with the transport stubbed.
-
-        ``hwm`` is what gungnir would have written after the send. The
-        default is a server that accounted for the whole payload, because
-        that is what a successful single-chunk upload looks like and the
-        gate records nothing without it. Pass an explicit dict, or None for
-        "no watermark", to test the other paths."""
-        if hwm == "auto":
-            hwm = {"last_upload_ts": __import__("time").time() + 5,
-                   "counters": {"aircraft_imported": 0,
-                                "aircraft_already_seen": len(records)}}
-        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
-            with mock.patch.object(muninn.gungnir.transport, "send",
-                                   return_value=0) as send:
-                rc = muninn.upload(records, "key", "https://example.invalid",
-                                   **kw)
+    def _upload(self, records, **kw):
+        """One upload with the transport stubbed to succeed."""
+        with mock.patch.object(muninn.gungnir.transport, "send",
+                               return_value=0) as send:
+            rc = muninn.upload(records, "key", "https://example.invalid", **kw)
         return rc, send
+
+    def _at(self, offset):
+        """Patch muninn's clock to ``offset`` seconds from now."""
+        return mock.patch.object(muninn.time, "time",
+                                 return_value=__import__("time").time() + offset)
 
     def test_repeat_payload_skips_the_post(self):
         records = [rec("ABC123"), rec("DEF456")]
@@ -90,94 +85,62 @@ class SkipUnchangedTests(unittest.TestCase):
                          "a payload of only already-sent aircraft must not "
                          "reach the transport at all")
 
-    def test_one_new_aircraft_sends_the_whole_payload(self):
+    def test_one_new_aircraft_sends_only_that_aircraft(self):
+        # The v2.6.0 change. A busy receiver always has a newcomer, and
+        # sending the whole snapshot for it re-offered ~140 aircraft the
+        # server already had, every cycle.
         first = [rec("ABC123"), rec("DEF456")]
         self._upload(first)
 
-        second = first + [rec("999AAA")]
-        rc, send = self._upload(second)
+        rc, send = self._upload(first + [rec("999AAA")])
         self.assertEqual(rc, 0)
         self.assertEqual(send.call_count, 1)
-        sent = send.call_args.kwargs["aircraft"]
-        self.assertEqual(len(sent), 3,
-                         "scoring behavior on a real upload is unchanged: we "
-                         "still send the full snapshot, not just the new one")
+        sent = [r["icao"] for r in send.call_args.kwargs["aircraft"]]
+        self.assertEqual(sent, ["999AAA"],
+                         "only the aircraft not already held may go up")
 
-    def _mixed_hwm(self, n):
-        """A response that imported something, so the payload gets the short
-        hold: the server does not say WHICH aircraft were new."""
-        return {"last_upload_ts": __import__("time").time() + 5,
-                "counters": {"aircraft_imported": 1,
-                             "aircraft_already_seen": max(n - 1, 0)}}
-
-    def test_ttl_expiry_lets_it_send_again(self):
+    def test_the_hold_lasts_a_month_then_expires(self):
+        # The server's "new" means new to the account, ever, and a station
+        # near an airport sees the same tails daily. A day hold re-offered
+        # them every morning as a sync with nothing new in it.
         records = [rec("ABC123")]
-        hwm = self._mixed_hwm(1)
-        self._upload(records, hwm=hwm)
-        _, send = self._upload(records, hwm=hwm)
-        self.assertEqual(send.call_count, 0)
+        self._upload(records)
+        for label, offset in (("next day", 86400 + 60),
+                              ("next week", 7 * 86400)):
+            with self.subTest(label), self._at(offset):
+                _, send = self._upload(records)
+                self.assertEqual(send.call_count, 0)
 
-        with mock.patch.object(muninn.time, "time",
-                               return_value=__import__("time").time()
-                               + muninn.gungnir.holds.SENT_TTL + 1):
-            _, send = self._upload(records, hwm=hwm)
+        with self._at(muninn.gungnir.holds.ACCEPTED_TTL + 1):
+            _, send = self._upload(records)
         self.assertEqual(send.call_count, 1,
                          "suppression must expire, never be permanent")
 
-    def test_zero_import_response_earns_the_long_hold(self):
-        # aircraft_imported == 0 is the server saying it already holds every
-        # aircraft in the payload. That is the case a fixed station hits all
-        # day, and an hourly hold does nothing for it because aircraft turn
-        # over completely inside half an hour.
-        records = [rec("ABC123")]
-        self._upload(records)  # default hwm: imported 0, all already seen
-
-        two_hours = __import__("time").time() + 2 * muninn.gungnir.holds.SENT_TTL
-        with mock.patch.object(muninn.time, "time", return_value=two_hours):
-            _, send = self._upload(records)
-        self.assertEqual(send.call_count, 0,
-                         "an aircraft the server confirmed it has must stay "
-                         "held well past the one-hour mark")
-
-        past_day = __import__("time").time() + muninn.gungnir.holds.CONFIRMED_TTL + 1
-        with mock.patch.object(muninn.time, "time", return_value=past_day):
-            _, send = self._upload(records)
-        self.assertEqual(send.call_count, 1,
-                         "even the long hold must expire")
-
-    def test_mixed_response_keeps_the_short_hold(self):
-        records = [rec("ABC123"), rec("DEF456")]
-        self._upload(records, hwm=self._mixed_hwm(2))
-        two_hours = __import__("time").time() + 2 * muninn.gungnir.holds.SENT_TTL
-        with mock.patch.object(muninn.time, "time", return_value=two_hours):
-            _, send = self._upload(records, hwm=self._mixed_hwm(2))
-        self.assertEqual(send.call_count, 1,
-                         "the server imported something and did not say "
-                         "what, so nothing here earns the long hold")
-
-    def test_a_later_short_mark_does_not_shorten_a_long_hold(self):
-        # The second payload has to contain something NEW, or the gate skips
-        # it and the overwrite path never runs -- which is how the first
-        # version of this test passed against code that did overwrite.
-        self._upload([rec("ABC123")])  # zero-import: ABC123 held for a day
-
-        mixed = [rec("ABC123"), rec("DEF456")]
-        _, send = self._upload(mixed, hwm=self._mixed_hwm(2))
-        self.assertEqual(send.call_count, 1, "DEF456 is new, so this sends")
-
+    def test_the_delta_is_what_gets_held(self):
+        # A newcomer gets the full month from the upload that carried it,
+        # and an aircraft already held keeps its original hold rather than
+        # being refreshed by an upload it was not in.
+        self._upload([rec("ABC123")])
+        before = muninn.gungnir.holds.load("muninn")["ABC123"]
+        with self._at(3600):
+            self._upload([rec("ABC123"), rec("DEF456")])
         state = muninn.gungnir.holds.load("muninn")
-        now = __import__("time").time()
-        self.assertGreater(state["ABC123"], now + muninn.gungnir.holds.SENT_TTL,
-                           "a confirmed aircraft reappearing in a mixed "
-                           "payload must keep its day-long hold")
-        self.assertLessEqual(state["DEF456"], now + muninn.gungnir.holds.SENT_TTL,
-                             "the genuinely unconfirmed one stays on the "
-                             "short hold")
+        self.assertEqual(state["ABC123"], before)
+        self.assertGreater(state["DEF456"], before)
 
-        two_hours = now + 2 * muninn.gungnir.holds.SENT_TTL
-        with mock.patch.object(muninn.time, "time", return_value=two_hours):
-            _, send = self._upload([rec("ABC123")])
+    def test_holds_from_an_earlier_version_are_honoured(self):
+        # A v2.5.1 state file holds for an hour or a day. Those entries stay
+        # valid expiry times: honoured while they last, then re-sent once
+        # and moved onto the month-long hold.
+        now = __import__("time").time()
+        muninn.gungnir.holds.save("muninn", {"ABC123": now + 3600})
+        _, send = self._upload([rec("ABC123")])
         self.assertEqual(send.call_count, 0)
+        with self._at(3601):
+            _, send = self._upload([rec("ABC123")])
+        self.assertEqual(send.call_count, 1)
+        self.assertGreater(muninn.gungnir.holds.load("muninn")["ABC123"],
+                           now + 7 * 86400)
 
     def test_record_without_icao_is_never_suppressed(self):
         r = rec("ABC123")
@@ -221,88 +184,20 @@ class SkipUnchangedTests(unittest.TestCase):
                          "--no-skip-unchanged must override existing state, "
                          "not merely decline to add to it")
 
-    def test_server_import_count_overrides_our_state(self):
-        # ABC123 is already on record, so a payload of both counts as one
-        # new aircraft. The server then reports importing two: something we
-        # wrote off as already-sent scored after all, so our bookkeeping is
-        # over-suppressing and the state must go.
-        #
-        # Note this can only fire on an upload that was actually made. A
-        # payload suppressed in full never reaches the server, so nothing
-        # can contradict it -- SENT_TTL_SECONDS is the only recovery there,
-        # which is why the TTL exists at all.
-        self._upload([rec("ABC123")])
-        records = [rec("ABC123"), rec("DEF456")]
-        hwm = {"last_upload_ts": __import__("time").time() + 5,
-               "counters": {"aircraft_imported": 2,
-                            "aircraft_already_seen": 0}}
-        _, send = self._upload(records, hwm=hwm)
-        self.assertEqual(send.call_count, 1)
-        self.assertEqual(muninn.gungnir.holds.load("muninn"), {},
-                         "a server that scores what we called stale must "
-                         "clear the state, not be overruled by it")
-        _, send = self._upload(records)
-        self.assertEqual(send.call_count, 1)
-
-    def test_server_agreeing_exactly_keeps_the_state(self):
-        # imported == expected_new is the server agreeing with us. Only a
-        # count ABOVE what we classified as new means we suppressed
-        # something real, so equality must not throw the state away.
-        self._upload([rec("ABC123")])
-        records = [rec("ABC123"), rec("DEF456")]
-        hwm = {"last_upload_ts": __import__("time").time() + 5,
-               "counters": {"aircraft_imported": 1,
-                            "aircraft_already_seen": 1}}
-        self._upload(records, hwm=hwm)
-        self.assertIn("DEF456", muninn.gungnir.holds.load("muninn"),
-                      "the server agreeing must not clear the state")
-
-    def test_multi_chunk_upload_does_not_trigger_the_self_heal(self):
-        # gungnir's hwm.record runs per chunk and keeps only the last one,
-        # so on a multi-chunk upload its counters describe a fraction of
-        # what we sent. Comparing a total against that fraction would clear
-        # the state on every large upload.
-        self._upload([rec("ABC123")])
-        records = [rec("ABC123"), rec("DEF456"), rec("777AAA")]
-        hwm = {"last_upload_ts": __import__("time").time() + 5,
-               "counters": {"aircraft_imported": 99,
-                            "aircraft_already_seen": 0}}
-        self._upload(records, hwm=hwm, batch_size=1)
-        state = muninn.gungnir.holds.load("muninn")
-        self.assertIn("ABC123", state,
-                      "a per-chunk watermark must not trigger the self-heal "
-                      "and wipe state the upload did not contradict")
-        self.assertIn("DEF456", state,
-                      "the upload still succeeded, so it is still recorded")
-
-    def test_unreadable_watermark_still_records_a_successful_upload(self):
-        # The watermark only drives the over-suppression check. Not being
-        # able to read it (none written, or one from another run) means the
-        # check cannot fire, not that the upload did not happen -- rc said
-        # it did. Tying the recording to the watermark disabled the gate for
-        # multi-chunk uploads too, which was never the intent.
+    def test_a_successful_upload_is_recorded_whatever_the_watermark(self):
+        # The hold no longer depends on the server's counters at all, so a
+        # missing or stale hwm.json must not change what gets recorded.
         for label, hwm in (
                 ("missing", None),
                 ("stale", {"last_upload_ts": 1.0,
-                           "counters": {"aircraft_imported": 99,
-                                        "aircraft_already_seen": 0}})):
+                           "counters": {"aircraft_imported": 99}})):
             with self.subTest(hwm=label):
                 self.state.unlink(missing_ok=True)
-                records = [rec("ABC123")]
-                self._upload(records, hwm=hwm)
-                self.assertIn("ABC123", muninn.gungnir.holds.load("muninn"))
-                _, send = self._upload(records, hwm=hwm)
+                with mock.patch.object(muninn.gungnir.hwm, "read",
+                                       return_value=hwm):
+                    self._upload([rec("ABC123")])
+                    _, send = self._upload([rec("ABC123")])
                 self.assertEqual(send.call_count, 0)
-
-    def test_stale_watermark_does_not_clear_existing_state(self):
-        self._upload([rec("ABC123")])
-        hwm = {"last_upload_ts": 1.0,
-               "counters": {"aircraft_imported": 99,
-                            "aircraft_already_seen": 0}}
-        self._upload([rec("ABC123"), rec("DEF456")], hwm=hwm)
-        self.assertIn("ABC123", muninn.gungnir.holds.load("muninn"),
-                      "a watermark predating this upload is a different "
-                      "run's and must not clear the state")
 
     def test_partially_accounted_payload_is_still_marked_sent(self):
         # Measured against the live API 2026-09-20: an aircraft upload comes
@@ -318,10 +213,11 @@ class SkipUnchangedTests(unittest.TestCase):
         hwm = {"last_upload_ts": __import__("time").time() + 5,
                "counters": {"aircraft_imported": 1,
                             "aircraft_already_seen": 1}}
-        self._upload(records, hwm=hwm)
-        self.assertEqual(sorted(muninn.gungnir.holds.load("muninn")),
-                         ["777AAA", "ABC123", "DEF456"])
-        _, send = self._upload(records, hwm=hwm)
+        with mock.patch.object(muninn.gungnir.hwm, "read", return_value=hwm):
+            self._upload(records)
+            self.assertEqual(sorted(muninn.gungnir.holds.load("muninn")),
+                             ["777AAA", "ABC123", "DEF456"])
+            _, send = self._upload(records)
         self.assertEqual(send.call_count, 0,
                          "the gate must engage on a real feeder's counters, "
                          "not just on ones that add up")
@@ -401,27 +297,6 @@ class SkipUnchangedTests(unittest.TestCase):
                          "stream flushes must not be suppressed by the "
                          "snapshot-feeder gate")
         self.assertFalse(self.state.exists())
-
-    def test_the_whole_payload_is_recorded_not_just_the_new_part(self):
-        # We send the full snapshot whenever anything in it is new, so the
-        # whole snapshot is what got sent and the whole snapshot is what
-        # gets held. Recording only the previously-unheld subset would let
-        # an aircraft's hold lapse while we were still uploading it every
-        # cycle, and no other assertion here distinguishes the two.
-        now = __import__("time").time()
-        self._upload([rec("ABC123")], hwm=self._mixed_hwm(1))
-        first = muninn.gungnir.holds.load("muninn")["ABC123"]
-
-        half_an_hour = now + muninn.gungnir.holds.SENT_TTL / 2
-        with mock.patch.object(muninn.time, "time",
-                               return_value=half_an_hour):
-            _, send = self._upload([rec("ABC123"), rec("DEF456")],
-                                   hwm=self._mixed_hwm(2))
-        self.assertEqual(send.call_count, 1, "DEF456 is new, so this sends")
-        refreshed = muninn.gungnir.holds.load("muninn")["ABC123"]
-        self.assertGreater(refreshed, first,
-                           "ABC123 was in the payload we just sent, so its "
-                           "hold must be refreshed, not left to lapse")
 
     def test_state_is_pruned(self):
         # Values are hold expiry times, so pruning needs no TTL of its own.

@@ -54,7 +54,7 @@ License: MIT
 """
 from __future__ import annotations
 
-__version__ = "2.5.1"
+__version__ = "2.6.0"
 GITHUB_REPO = "Yggdrasil-AI-labs/adsb-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -148,7 +148,7 @@ except ModuleNotFoundError:
 # in one August sample, each one a failed unit and a health alert. The
 # symptom looks like a server problem and costs hours to trace back to an
 # import. One line of output at startup is cheaper than that hunt.
-REQUIRED_GUNGNIR = "0.4.1"
+REQUIRED_GUNGNIR = "0.5.0"
 
 
 def _check_gungnir_version() -> None:
@@ -1764,12 +1764,14 @@ def _INFO() -> str:  return _tag("[..]", "1;36")     # bold cyan
 # slot its records belong to, and the --no-skip-unchanged switch.
 HOLDS_SLOT = "aircraft"
 
-# gungnir.holds arrived in 0.2.0. --update reinstalls requirements.txt, so
-# the pin normally comes along, but "normally" is not a guarantee and an
-# AttributeError mid-upload is a terrible way to find out. Without it the
-# gate simply turns off and uploads carry on exactly as they did before
-# v2.3.0. The version guard says why.
-HOLDS_AVAILABLE = hasattr(gungnir, "holds")
+# gungnir.holds arrived in 0.2.0 and ACCEPTED_TTL in 0.5.0. --update
+# reinstalls requirements.txt, so the pin normally comes along, but
+# "normally" is not a guarantee and an AttributeError mid-upload is a
+# terrible way to find out. Without both the gate simply turns off and
+# uploads carry on exactly as they did before v2.3.0. The version guard
+# says why.
+HOLDS_AVAILABLE = (hasattr(gungnir, "holds")
+                   and hasattr(gungnir.holds, "ACCEPTED_TTL"))
 
 
 def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
@@ -1790,76 +1792,61 @@ def upload(records: list[dict], api_key: str, api_url: str = DEFAULT_API_URL,
     Wire shape (HMAC envelope) is byte-identical to v1.11.1, verified
     by ``gungnir/tests/test_muninn_parity.py``.
 
-    ``skip_unchanged`` suppresses the request entirely when every aircraft in
-    ``records`` is still held by ``gungnir.holds``. Disable it with
-    --no-skip-unchanged. A dry run never consults or updates the holds.
+    ``skip_unchanged`` sends only the aircraft ``gungnir.holds`` is not
+    holding, and skips the request entirely when that leaves nothing.
+    Disable it with --no-skip-unchanged. A dry run never consults or
+    updates the holds.
     """
     now = time.time()
-    new_records = records
-    if skip_unchanged and HOLDS_AVAILABLE and not dry_run and records:
+    to_send = records
+    gated = skip_unchanged and HOLDS_AVAILABLE and not dry_run and records
+    if gated:
         state = gungnir.holds.prune(gungnir.holds.load("muninn"), now)
-        new_records = gungnir.holds.unheld(records, HOLDS_SLOT, state, now)
-        if not new_records:
-            # Deliberately does not name a fixed duration. Holds are not all
-            # the same length: an aircraft the server confirmed it has is
-            # held for a day, one we merely sent for an hour.
-            held = [state[k] for k in
-                    (gungnir.holds.identity(r, HOLDS_SLOT) for r in records)
-                    if k in state]
-            soonest = min(held) if held else now
+        to_send = gungnir.holds.unheld(records, HOLDS_SLOT, state, now)
+        if not to_send:
             print(f"{_INFO()} nothing new to send ({len(records)} aircraft, "
-                  f"none due for re-send for another "
-                  f"{max(int((soonest - now) // 60), 1)} min). Skipping "
-                  f"this sync.", file=sys.stderr)
+                  f"all already on file). Skipping this sync.",
+                  file=sys.stderr)
             return 0
+        if len(to_send) < len(records):
+            print(f"{_INFO()} sending {len(to_send)} of {len(records)} "
+                  f"aircraft; the rest were sent in the last "
+                  f"{gungnir.holds.ACCEPTED_TTL // 86400} days.",
+                  file=sys.stderr)
 
     rc = gungnir.transport.send(
         "muninn", __version__, api_url, api_key,
-        aircraft=records,
+        aircraft=to_send,
         batch_size=batch_size,
         dry_run=dry_run,
         user_agent_extra=GITHUB_URL,
     )
 
-    if skip_unchanged and HOLDS_AVAILABLE and not dry_run and rc == 0 and records:
-        # A successful upload is recorded as sent. We deliberately do NOT
-        # require the server's counters to add up to the payload first.
+    if gated and rc == 0:
+        # v2.6.0: only the delta goes up, and all of it is held for a month.
         #
-        # v2.3.0 did, and it was wrong twice over. The counters overlap
-        # rather than partition a payload: a one-record upload comes back
-        # imported=1 AND captured=1, so they cannot be summed. And in the
-        # field they routinely land one short of the payload, measured on
-        # six consecutive cycles from an ADS-B feeder: 152 of 153, 121 of
-        # 122, 137 of 138, interleaved with cycles that matched exactly.
-        # Requiring equality meant that feeder never recorded anything and
-        # the gate never once engaged.
+        # Up to v2.5.1 the gate was all-or-nothing: one unheld aircraft sent
+        # the whole snapshot. A fixed receiver near an airport sees ~140
+        # aircraft with complete turnover inside half an hour, so there was
+        # always a newcomer and the gate almost never fired in daylight. The
+        # server's "new" means new to the account, ever, so the day hold did
+        # not help either: the same airline tails came back every morning as
+        # a sync carrying nothing new.
         #
-        # What that check was guarding is real but small: the server can
-        # accept an upload and quietly keep less of it than we sent, since
-        # gungnir only fails an upload when EVERY counter is zero. The
-        # remedy does not fit the data though. An ADS-B payload is a live
-        # snapshot, not a queue: an aircraft the server dropped has usually
-        # left the receiver's range before the next cycle, so "retry it
-        # next sync" retries nothing. The exposure is one hour of
-        # suppression on an aircraft that was not going to be re-sent
-        # anyway, against a feature that otherwise does not work at all.
-        imported = gungnir.holds.imported_count(
-            "muninn", now, len(records) <= batch_size)
-        if imported is not None and imported > len(new_records):
-            # The server scored aircraft we had written off. Our state is
-            # wrong in the one direction that costs him points, so throw it
-            # away and let the next cycle upload in full.
-            print(f"{_INFO()} the server accepted more aircraft than expected; "
-                  f"clearing already-sent state so the next sync uploads in "
-                  f"full.", file=sys.stderr)
-            gungnir.holds.save("muninn", {})
-        else:
-            # holds.ttl_for picks the length: a day when the server imported
-            # nothing (it already holds every aircraft in the payload, its
-            # own verdict), an hour otherwise. None is not zero -- counters
-            # we could not read must not earn the long hold.
-            gungnir.holds.record_sent("muninn", records, HOLDS_SLOT, now,
-                                      gungnir.holds.ttl_for(imported))
+        # After an accepted upload every aircraft in it is on file, whether
+        # it was already there or just imported, so the old question of
+        # which records in a mixed response were new no longer matters and
+        # one long hold covers them all. That also retires the self-heal
+        # that cleared the state when the server imported more than we
+        # expected: held aircraft are never sent, so nothing the server says
+        # about an upload can contradict a hold.
+        #
+        # The cost, accepted knowingly: an aircraft the server accepts but
+        # quietly does not keep (counters land one short on some cycles,
+        # measured 2026-09-20) is not offered again for 30 days. A
+        # month-long hold on one tail is worth a gate that engages.
+        gungnir.holds.record_sent("muninn", to_send, HOLDS_SLOT, now,
+                                  gungnir.holds.ACCEPTED_TTL)
     return rc
 
 
@@ -3618,9 +3605,9 @@ def main() -> int:
                          "wiring it into a watch loop or schedule. Mirrors "
                          "Heimdall's --preview for cross-tool consistency.")
     ap.add_argument("--no-skip-unchanged", action="store_true",
-                    help="upload every cycle even when every aircraft in it "
-                         "was already sent in the last hour. By default a "
-                         "sync that would carry nothing new is skipped "
+                    help="upload the full snapshot every cycle. By default "
+                         "only aircraft not sent in the last 30 days go up, "
+                         "and a sync that would carry nothing new is skipped "
                          "instead of sent, which is what the server's "
                          "\"syncs in a row with nothing new\" warning is "
                          "asking for.")
